@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Echogram</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- Desktop Sidebar Navigation -->
+    <nav id="sidebar" class="desktop-only">
+      <div class="logo">
+        <h2>Echogram</h2>
+      </div>
+      <ul class="nav-links">
+        <li class="active" data-view="home"><i class="fa-solid fa-house"></i> <span>Home</span></li>
+        <li data-view="search"><i class="fa-solid fa-magnifying-glass"></i> <span>Search</span></li>
+        <li data-view="notifications">
+          <i class="fa-regular fa-bell"></i> <span>Notifications</span>
+          <span id="notif-badge-desktop" class="badge hidden">0</span>
+        </li>
+        <li data-view="messages"><i class="fa-regular fa-envelope"></i> <span>Messages</span></li>
+        <li data-view="profile"><i class="fa-regular fa-user"></i> <span>Profile</span></li>
+        <li data-view="settings"><i class="fa-solid fa-gear"></i> <span>Settings</span></li>
+      </ul>
+      <div class="user-info">
+        <img id="current-user-avatar-desktop" src="default-avatar.png" alt="Avatar">
+        <div class="user-details">
+          <span id="current-username-desktop">User</span>
+          <button class="logout-btn">Logout</button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main id="main-content">
+      
+      <!-- Home View -->
+      <section id="view-home" class="view active">
+        <header class="view-header">
+          <h2>Home</h2>
+        </header>
+        <div class="compose-echo">
+          <img id="compose-avatar" src="default-avatar.png" alt="Avatar">
+          <div class="compose-body">
+            <textarea id="echo-text" placeholder="What's happening?"></textarea>
+            <div id="image-preview-container" class="hidden">
+              <img id="image-preview" src="" alt="Preview">
+              <button id="remove-image-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="compose-actions">
+              <label for="echo-image-upload" class="icon-btn">
+                <i class="fa-regular fa-image"></i>
+              </label>
+              <input type="file" id="echo-image-upload" accept="image/*" class="hidden">
+              <button id="post-echo-btn" class="primary-btn">Echo</button>
+            </div>
+          </div>
+        </div>
+        <div id="feed-container"></div>
+      </section>
+
+      <!-- Search View -->
+      <section id="view-search" class="view hidden">
+        <header class="view-header">
+          <h2>Search</h2>
+        </header>
+        <div class="search-bar">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="search-input" placeholder="Search users, echoes...">
+        </div>
+        <div id="search-results-users" class="search-section"></div>
+        <div id="search-results-echoes" class="search-section"></div>
+      </section>
+
+      <!-- Notifications View -->
+      <section id="view-notifications" class="view hidden">
+        <header class="view-header">
+          <h2>Notifications</h2>
+          <button id="mark-read-btn" class="text-btn">Mark all as read</button>
+        </header>
+        <div id="notifications-container"></div>
+      </section>
+
+      <!-- Messages View -->
+      <section id="view-messages" class="view hidden">
+        <header class="view-header">
+          <h2>Messages</h2>
+        </header>
+        <div class="messages-layout">
+          <div class="conversations-list" id="conversations-list">
+            <!-- List of users -->
+          </div>
+          <div class="chat-area hidden" id="chat-area">
+            <div class="chat-header">
+              <i id="back-to-convos" class="fa-solid fa-arrow-left mobile-only" style="margin-right: 15px; cursor: pointer;"></i>
+              <span id="chat-with-username">User</span>
+              <span id="chat-online-status" class="status-dot"></span>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+              <!-- Messages go here -->
+            </div>
+            <div class="chat-input">
+              <input type="text" id="message-input" placeholder="Start a new message">
+              <button id="send-message-btn"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Profile View -->
+      <section id="view-profile" class="view hidden">
+        <header class="view-header">
+          <h2 id="profile-title">Profile</h2>
+          <i id="profile-settings-icon" class="fa-solid fa-gear mobile-only" style="cursor: pointer;" onclick="document.querySelector('[data-view=\'settings\']').click()"></i>
+        </header>
+        <div class="profile-header">
+          <div class="profile-info">
+            <div class="profile-avatar-container">
+              <img id="profile-avatar" src="default-avatar.png" alt="Avatar">
+            </div>
+            <div class="profile-details">
+              <h3 id="profile-username">Username <i id="profile-verified" class="fa-solid fa-check verified-badge hidden"></i></h3>
+              <p id="profile-bio"></p>
+            </div>
+          </div>
+          <div class="profile-actions">
+            <button id="edit-profile-btn" class="outline-btn hidden">Edit Profile</button>
+            <button id="follow-btn" class="primary-btn hidden">Follow</button>
+            <button id="block-btn" class="outline-btn hidden" style="border-color: #000; color: #000;">Block</button>
+          </div>
+        </div>
+        
+        <!-- Profile Tabs -->
+        <div class="profile-tabs">
+          <button class="profile-tab active" data-ptab="echoes">Echoes</button>
+          <button class="profile-tab" data-ptab="followers"><span id="profile-followers-count">0</span> Followers</button>
+          <button class="profile-tab" data-ptab="following"><span id="profile-following-count">0</span> Following</button>
+        </div>
+        
+        <!-- Tab Contents -->
+        <div id="ptab-echoes" class="ptab-content active">
+          <div id="profile-feed-container"></div>
+        </div>
+        <div id="ptab-followers" class="ptab-content hidden">
+          <div id="profile-followers-list"></div>
+        </div>
+        <div id="ptab-following" class="ptab-content hidden">
+          <div id="profile-following-list"></div>
+        </div>
+      </section>
+
+      <!-- Settings View -->
+      <section id="view-settings" class="view hidden">
+        <header class="view-header">
+          <h2>Settings</h2>
+        </header>
+        <div class="settings-form">
+          <h3>Edit Profile</h3>
+          <div class="form-group">
+            <label>Avatar</label>
+            <input type="file" id="settings-avatar-upload" accept="image/*">
+          </div>
+          <div class="form-group">
+            <label>Bio</label>
+            <textarea id="settings-bio"></textarea>
+          </div>
+          <h3>Privacy</h3>
+          <div class="form-group checkbox">
+            <input type="checkbox" id="settings-show-online">
+            <label for="settings-show-online">Show Online Status</label>
+          </div>
+          <div class="form-group checkbox">
+            <input type="checkbox" id="settings-show-seen">
+            <label for="settings-show-seen">Send Read Receipts</label>
+          </div>
+          <button id="save-settings-btn" class="primary-btn">Save Changes</button>
+          
+          <div style="margin-top: 40px; text-align: center;">
+             <button class="logout-btn outline-btn" style="width: 100%;">Logout</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav id="bottom-nav" class="mobile-only">
+      <ul class="nav-links bottom-nav-links">
+        <li class="active" data-view="home"><i class="fa-solid fa-house"></i></li>
+        <li data-view="search"><i class="fa-solid fa-magnifying-glass"></i></li>
+        <li data-view="notifications" style="position:relative;">
+          <i class="fa-regular fa-bell"></i>
+          <span id="notif-badge-mobile" class="badge hidden">0</span>
+        </li>
+        <li data-view="messages"><i class="fa-regular fa-envelope"></i></li>
+        <li data-view="profile"><i class="fa-regular fa-user"></i></li>
+      </ul>
+    </nav>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>

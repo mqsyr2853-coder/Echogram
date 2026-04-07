@@ -1,0 +1,14 @@
+{
+  "name": "echogram",
+  "version": "1.0.0",
+  "description": "Echogram Social Network",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "express": "^4.18.2",
+    "mongoose": "^7.5.0"
+  }
+}
