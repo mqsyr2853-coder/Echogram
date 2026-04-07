@@ -12,19 +12,16 @@ let onlineUserList = [];
 if (socket) {
   socket.on('online_users', (users) => {
     onlineUserList = users;
-    // Update current chat status if open
     if (currentChatUser) {
       const isOnline = onlineUserList.includes(currentChatUser);
       const dot = document.getElementById('chat-online-status');
       if (dot) dot.className = `status-dot ${isOnline ? 'online' : ''}`;
     }
-    // Update profile status if open
     if (currentProfileUser) {
       const isOnline = onlineUserList.includes(currentProfileUser);
       const dot = document.getElementById('profile-online-status');
       if (dot) dot.className = `status-dot ${isOnline ? 'online' : ''}`;
     }
-    // Update conversations list if in messages view
     if (!document.getElementById('view-messages').classList.contains('hidden')) {
       loadConversations();
     }
@@ -95,7 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   navLinks.forEach(link => {
     link.addEventListener('click', () => {
       const view = link.dataset.view;
-      // sync all navs
+      if (!view) return;
       document.querySelectorAll(`[data-view="${view}"]`).forEach(l => {
         document.querySelectorAll(`.nav-links li`).forEach(nl => nl.classList.remove('active'));
         l.classList.add('active');
@@ -125,17 +122,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('chat-area').classList.add('hidden');
   });
 
-  // Dark Mode Toggle
+  // Dark Mode Logic
   const applyDarkMode = (isDark) => {
     if (isDark) {
       document.body.classList.add('dark-mode');
-      document.querySelectorAll('#dark-mode-toggle i, #dark-mode-toggle-mobile i').forEach(i => {
+      document.querySelectorAll('#theme-toggle-modal').forEach(i => {
         i.classList.remove('fa-moon');
         i.classList.add('fa-sun');
       });
     } else {
       document.body.classList.remove('dark-mode');
-      document.querySelectorAll('#dark-mode-toggle i, #dark-mode-toggle-mobile i').forEach(i => {
+      document.querySelectorAll('#theme-toggle-modal').forEach(i => {
         i.classList.remove('fa-sun');
         i.classList.add('fa-moon');
       });
@@ -151,8 +148,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     applyDarkMode(isDark);
   };
 
-  document.getElementById('dark-mode-toggle').addEventListener('click', toggleDarkMode);
-  document.getElementById('dark-mode-toggle-mobile').addEventListener('click', toggleDarkMode);
+  document.getElementById('theme-toggle-modal').addEventListener('click', toggleDarkMode);
 
   await loadCurrentUserProfile();
   loadFeed();
@@ -161,13 +157,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function switchView(viewId) {
   document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
-  document.getElementById(`view-${viewId}`).classList.remove('hidden');
+  const view = document.getElementById(`view-${viewId}`);
+  if (view) view.classList.remove('hidden');
   
   if (viewId === 'home') loadFeed();
+  if (viewId === 'explore') loadExplore();
   if (viewId === 'search') document.getElementById('search-input').focus();
   if (viewId === 'notifications') {
     loadNotifications();
-    // Mark notifications as read when opening the view
     fetchAPI('/api/notifications/read', {
       method: 'POST',
       body: JSON.stringify({ username: currentUser })
@@ -178,7 +175,7 @@ function switchView(viewId) {
     }).catch(console.error);
   }
   if (viewId === 'messages') {
-    document.getElementById('chat-area').classList.add('hidden'); // Reset to list on mobile
+    document.getElementById('chat-area').classList.add('hidden');
     loadConversations();
   }
   if (viewId === 'profile') loadProfile(currentUser);
@@ -204,6 +201,15 @@ async function loadFeed() {
   }
 }
 
+async function loadExplore() {
+  try {
+    const echoes = await fetchAPI('/api/explore');
+    renderFeed(echoes, document.getElementById('explore-container'));
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 function renderFeed(echoes, container) {
   container.innerHTML = '';
   echoes.forEach(echo => {
@@ -217,30 +223,53 @@ function renderFeed(echoes, container) {
     if (echo.author !== currentUser) {
       followBtnHtml = `<button class="feed-follow-btn outline-btn" onclick="toggleFollow('${echo.author}', ${isFollowing})">${isFollowing ? 'Following' : 'Follow'}</button>`;
     }
+
+    let repostHeader = '';
+    let mainContent = `
+      <div class="echo-text">${escapeHTML(echo.text)}</div>
+      ${echo.image ? `<img src="${echo.image}" class="echo-image">` : ''}
+    `;
+
+    if (echo.isRepost && echo.originalEcho) {
+      repostHeader = `<div class="repost-header" style="font-size: 0.85rem; color: #666; margin-bottom: 10px;"><i class="fa-solid fa-retweet"></i> <span class="user-link" style="cursor:pointer; font-weight:bold;" data-username="${echo.author}">${echo.author}</span> Re-echoed</div>`;
+      const orig = echo.originalEcho;
+      mainContent = `
+        <div class="original-echo-container" style="border: 1px solid #333; padding: 10px; margin-top: 5px;">
+          <div class="echo-header" style="border-bottom: none; padding: 0; margin-bottom: 5px;">
+            <span class="echo-author" style="font-size: 0.9rem;"><span class="user-link" style="cursor:pointer; font-weight:bold;" data-username="${orig.author}">${orig.author}</span></span>
+          </div>
+          <div class="echo-text" style="font-size: 0.9rem;">${escapeHTML(orig.text)}</div>
+          ${orig.image ? `<img src="${orig.image}" class="echo-image" style="max-height: 200px; object-fit: cover;">` : ''}
+        </div>
+      `;
+    }
     
     echoEl.innerHTML = `
-      <img class="echo-avatar" src="${defaultAvatar}" alt="Avatar" onclick="loadProfile('${echo.author}')">
+      <img class="echo-avatar user-link" data-username="${echo.author}" src="${defaultAvatar}" alt="Avatar" style="cursor:pointer;">
       <div class="echo-content">
+        ${repostHeader}
         <div class="echo-header">
           <div>
-             <span class="echo-author" onclick="loadProfile('${echo.author}')">${echo.author} <span class="verified-badge-inline hidden">✓</span></span>
+             <span class="echo-author"><span class="user-link" style="cursor:pointer; font-weight:bold;" data-username="${echo.author}">${echo.author}</span> <span class="admin-badge hidden">✓</span></span>
              <span class="echo-time">${new Date(echo.createdAt).toLocaleString()}</span>
           </div>
           ${followBtnHtml}
         </div>
-        <div class="echo-text">${escapeHTML(echo.text)}</div>
-        ${echo.image ? `<img src="${echo.image}" class="echo-image">` : ''}
+        ${mainContent}
         <div class="echo-actions">
           <button class="echo-action ${isLiked ? 'liked' : ''}" onclick="toggleLike('${echo._id}')">
-            <i class="${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart"></i> ${echo.likedBy.length}
+            <i class="${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart"></i> <span class="interaction-count" data-type="likes" data-echo-id="${echo._id}">${echo.likedBy.length}</span>
           </button>
-          <button class="echo-action" onclick="toggleComments('${echo._id}')">
+          <button class="echo-action comment-btn" data-echo-id="${echo._id}">
             <i class="fa-regular fa-comment"></i> ${echo.comments.length}
+          </button>
+          <button class="echo-action" onclick="repostEcho('${echo._id}')">
+            <i class="fa-solid fa-retweet"></i> <span class="interaction-count" data-type="reposts" data-echo-id="${echo._id}">${echo.reposters ? echo.reposters.length : 0}</span>
           </button>
           <button class="echo-action" onclick="openSaveToCollection('${echo._id}')">
             <i class="fa-regular fa-bookmark"></i>
           </button>
-          ${isAdmin ? `<button class="echo-action delete-btn" onclick="deleteEcho('${echo._id}')"><i class="fa-solid fa-trash"></i></button>` : ''}
+          ${(isAdmin || echo.author === currentUser) ? `<button class="echo-action delete-btn" onclick="deleteEcho('${echo._id}')"><i class="fa-solid fa-trash"></i></button>` : ''}
         </div>
         <div id="comments-${echo._id}" class="comments-section hidden">
           <div class="comments-list" id="comments-list-${echo._id}">
@@ -248,16 +277,15 @@ function renderFeed(echoes, container) {
           </div>
           <div class="comment-input-area">
             <input type="text" id="comment-input-${echo._id}" placeholder="Add a comment...">
-            <button class="outline-btn" onclick="postComment('${echo._id}')">Post</button>
+            <button class="outline-btn post-comment-btn" data-echo-id="${echo._id}">Post</button>
           </div>
         </div>
       </div>
     `;
     
-    // Fetch author details async
     fetchAPI(`/api/users/${echo.author}?currentUser=${currentUser}`).then(u => {
       if (u.avatar) echoEl.querySelector('.echo-avatar').src = u.avatar;
-      if (u.isAdmin) echoEl.querySelector('.verified-badge-inline').classList.remove('hidden');
+      if (u.isAdmin) echoEl.querySelector('.admin-badge').classList.remove('hidden');
     }).catch(()=>{});
 
     container.appendChild(echoEl);
@@ -271,10 +299,10 @@ function renderCommentsHTML(comments, echoId) {
     
     const repliesHtml = (c.replies || []).map(r => `
       <div class="comment reply" style="margin-left: 40px; border-left: 1px solid var(--border-color); padding-left: 10px; margin-top: 10px;">
-        <img class="comment-avatar" src="${r.authorAvatar || defaultAvatar}" alt="Avatar" style="width: 24px; height: 24px;">
+        <img class="comment-avatar user-link" data-username="${r.author}" src="${r.authorAvatar || defaultAvatar}" alt="Avatar" style="width: 24px; height: 24px; cursor:pointer;">
         <div class="comment-body">
           <div class="comment-header">
-            <span class="comment-author">${r.author} ${r.authorIsAdmin ? '<span class="verified-badge-inline">✓</span>' : ''}</span>
+            <span class="comment-author"><span class="user-link" style="cursor:pointer; font-weight:bold;" data-username="${r.author}">${r.author}</span> ${r.authorIsAdmin ? '<span class="admin-badge">✓</span>' : ''}</span>
             <span class="comment-time">${new Date(r.createdAt).toLocaleDateString()}</span>
           </div>
           <div class="comment-text">${escapeHTML(r.text)}</div>
@@ -285,10 +313,10 @@ function renderCommentsHTML(comments, echoId) {
     return `
       <div class="comment-wrapper" style="margin-bottom: 20px;">
         <div class="comment">
-          <img class="comment-avatar" src="${c.authorAvatar || defaultAvatar}" alt="Avatar" onclick="loadProfile('${c.author}')">
+          <img class="comment-avatar user-link" data-username="${c.author}" src="${c.authorAvatar || defaultAvatar}" alt="Avatar" style="cursor:pointer;">
           <div class="comment-body">
             <div class="comment-header">
-              <span class="comment-author" onclick="loadProfile('${c.author}')">${c.author} ${c.authorIsAdmin ? '<span class="verified-badge-inline">✓</span>' : ''}</span>
+              <span class="comment-author"><span class="user-link" style="cursor:pointer; font-weight:bold;" data-username="${c.author}">${c.author}</span> ${c.authorIsAdmin ? '<span class="admin-badge">✓</span>' : ''}</span>
               <span class="comment-time">${new Date(c.createdAt).toLocaleDateString()}</span>
             </div>
             <div class="comment-text">${escapeHTML(c.text)}</div>
@@ -299,13 +327,13 @@ function renderCommentsHTML(comments, echoId) {
                <button class="comment-action ${isDisliked ? 'active' : ''}" onclick="reactComment('${echoId}', '${c._id}', 'dislike')">
                   <i class="${isDisliked ? 'fa-solid' : 'fa-regular'} fa-thumbs-down"></i> ${c.dislikes.length}
                </button>
-               <button class="comment-action" onclick="toggleReplyInput('${c._id}')">
+               <button class="comment-action reply-btn" data-comment-id="${c._id}">
                   <i class="fa-solid fa-reply"></i> Reply
                </button>
             </div>
             <div id="reply-input-${c._id}" class="comment-input-area hidden" style="margin-top: 5px;">
               <input type="text" id="reply-text-${c._id}" placeholder="Write a reply..." style="font-size: 0.85rem; border: 1px solid var(--border-color); padding: 5px; outline: none; width: 100%;">
-              <button class="outline-btn" style="padding: 4px 8px; font-size: 0.8rem; margin-top: 5px;" onclick="postReply('${echoId}', '${c._id}')">Post Reply</button>
+              <button class="outline-btn post-reply-btn" data-echo-id="${echoId}" data-comment-id="${c._id}" style="padding: 4px 8px; font-size: 0.8rem; margin-top: 5px;">Post Reply</button>
             </div>
           </div>
         </div>
@@ -315,49 +343,25 @@ function renderCommentsHTML(comments, echoId) {
   }).join('');
 }
 
-// --- Compose Echo ---
-document.getElementById('echo-image-upload').addEventListener('change', function(e) {
-  const file = e.target.files[0];
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = function(evt) {
-      document.getElementById('image-preview').src = evt.target.result;
-      document.getElementById('image-preview-container').classList.remove('hidden');
-    };
-    reader.readAsDataURL(file);
-  }
-});
+// --- Modals Logic ---
+function openModal(modalId) {
+  document.getElementById('modal-overlay').classList.remove('hidden');
+  document.getElementById(modalId).classList.remove('hidden');
+}
 
-document.getElementById('remove-image-btn').addEventListener('click', () => {
-  document.getElementById('echo-image-upload').value = '';
-  document.getElementById('image-preview-container').classList.add('hidden');
-});
+function closeModal() {
+  document.getElementById('modal-overlay').classList.add('hidden');
+  document.querySelectorAll('.settings-modal, .interaction-modal').forEach(m => m.classList.add('hidden'));
+}
 
-document.getElementById('post-echo-btn').addEventListener('click', async () => {
-  const textInput = document.getElementById('echo-text');
-  const fileInput = document.getElementById('echo-image-upload');
-  
-  if (!textInput.value.trim() && !fileInput.files[0]) return;
-  
-  const formData = new FormData();
-  formData.append('text', textInput.value.trim());
-  formData.append('author', currentUser);
-  if (fileInput.files[0]) {
-    formData.append('image', fileInput.files[0]);
-  }
-  
-  try {
-    const res = await fetch('/api/echoes', {
-      method: 'POST',
-      body: formData
-    });
-    if (!res.ok) throw new Error('Upload failed');
-    textInput.value = '';
-    document.getElementById('remove-image-btn').click();
-    loadFeed();
-  } catch (err) {
-    alert('Failed to post echo');
-  }
+document.getElementById('modal-overlay').addEventListener('click', closeModal);
+document.getElementById('close-settings-btn').addEventListener('click', closeModal);
+document.getElementById('close-interaction-btn').addEventListener('click', closeModal);
+
+document.querySelectorAll('#open-settings-btn, #open-settings-btn-mobile').forEach(btn => {
+  btn.addEventListener('click', () => {
+    openModal('settings-modal');
+  });
 });
 
 // --- Echo Actions ---
@@ -375,21 +379,21 @@ async function toggleLike(echoId) {
 }
 
 function toggleComments(echoId) {
-  document.getElementById(`comments-${echoId}`).classList.toggle('hidden');
+  const section = document.getElementById(`comments-${echoId}`);
+  if (section) section.classList.toggle('hidden');
 }
 
 async function postComment(echoId) {
   const input = document.getElementById(`comment-input-${echoId}`);
   const text = input.value.trim();
   if (!text) return;
-  
   try {
     const updatedEcho = await fetchAPI(`/api/echoes/${echoId}/comment`, {
       method: 'POST',
       body: JSON.stringify({ author: currentUser, authorAvatar: currentUserAvatar, text })
     });
-    // Immediately update UI
-    document.getElementById(`comments-list-${echoId}`).innerHTML = renderCommentsHTML(updatedEcho.comments, echoId);
+    const list = document.getElementById(`comments-list-${echoId}`);
+    if (list) list.innerHTML = renderCommentsHTML(updatedEcho.comments, echoId);
     input.value = '';
   } catch (err) {
     console.error(err);
@@ -398,9 +402,12 @@ async function postComment(echoId) {
 
 function toggleReplyInput(commentId) {
   const input = document.getElementById(`reply-input-${commentId}`);
-  input.classList.toggle('hidden');
-  if (!input.classList.contains('hidden')) {
-    document.getElementById(`reply-text-${commentId}`).focus();
+  if (input) {
+    input.classList.toggle('hidden');
+    if (!input.classList.contains('hidden')) {
+      const textField = document.getElementById(`reply-text-${commentId}`);
+      if (textField) textField.focus();
+    }
   }
 }
 
@@ -408,13 +415,13 @@ async function postReply(echoId, commentId) {
   const input = document.getElementById(`reply-text-${commentId}`);
   const text = input.value.trim();
   if (!text) return;
-  
   try {
     const updatedEcho = await fetchAPI(`/api/echoes/${echoId}/comments/${commentId}/reply`, {
       method: 'POST',
       body: JSON.stringify({ author: currentUser, authorAvatar: currentUserAvatar, text })
     });
-    document.getElementById(`comments-list-${echoId}`).innerHTML = renderCommentsHTML(updatedEcho.comments, echoId);
+    const list = document.getElementById(`comments-list-${echoId}`);
+    if (list) list.innerHTML = renderCommentsHTML(updatedEcho.comments, echoId);
   } catch (err) {
     console.error(err);
   }
@@ -435,92 +442,66 @@ async function reactComment(echoId, commentId, type) {
 async function deleteEcho(echoId) {
   if (!confirm('Delete this echo?')) return;
   try {
-    await fetchAPI(`/api/admin/delete/${echoId}`, {
+    await fetchAPI(`/api/echoes/${echoId}`, {
       method: 'DELETE',
       body: JSON.stringify({ username: currentUser })
     });
     if (!document.getElementById('view-home').classList.contains('hidden')) loadFeed();
     else if (!document.getElementById('view-profile').classList.contains('hidden')) loadProfile(currentProfileUser);
   } catch (err) {
-    alert('Not authorized');
+    alert('Deletion failed or unauthorized');
   }
 }
 
-// --- Search ---
-let searchTimeout;
-document.getElementById('search-input').addEventListener('input', (e) => {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => performSearch(e.target.value.trim()), 300);
-});
+async function repostEcho(echoId) {
+  try {
+    await fetchAPI(`/api/echoes/${echoId}/repost`, {
+      method: 'POST',
+      body: JSON.stringify({ username: currentUser })
+    });
+    loadFeed();
+  } catch (err) {
+    console.error(err);
+    alert('Failed to re-echo');
+  }
+}
 
+// --- Search & PerformSearch ---
 async function performSearch(query) {
   if (!query) {
     document.getElementById('search-results-users').innerHTML = '';
     document.getElementById('search-results-echoes').innerHTML = '';
     return;
   }
-  
   try {
     const data = await fetchAPI(`/api/search?q=${encodeURIComponent(query)}&currentUser=${currentUser}`);
-    
-    // Render Users
     const usersContainer = document.getElementById('search-results-users');
     usersContainer.innerHTML = data.users.length ? '<h3>Users</h3>' : '';
     data.users.forEach(u => {
       const el = document.createElement('div');
       el.className = 'user-item';
-      
       const isFollowing = myFollowing.includes(u.username);
       let btnHtml = '';
       if (u.username !== currentUser) {
         btnHtml = `<button class="outline-btn" onclick="event.stopPropagation(); toggleFollow('${u.username}', ${isFollowing}); performSearch('${query}')">${isFollowing ? 'Following' : 'Follow'}</button>`;
       }
-      
       el.innerHTML = `
-        <div class="user-item-info">
+        <div class="user-item-info user-link" data-username="${u.username}" style="cursor:pointer;">
           <img src="${u.avatar || defaultAvatar}">
           <div class="user-item-details">
-            <span class="username">${u.username} ${u.isAdmin ? '<span class="verified-badge-inline">✓</span>' : ''}</span>
+            <span class="username"><span class="user-link" style="cursor:pointer; font-weight:bold;" data-username="${u.username}">${u.username}</span> ${u.isAdmin ? '<span class="admin-badge">✓</span>' : ''}</span>
             <span class="bio">${u.bio ? escapeHTML(u.bio).substring(0, 50) + '...' : ''}</span>
           </div>
         </div>
         <div class="user-item-actions">${btnHtml}</div>
       `;
-      el.onclick = () => {
-        document.querySelector('[data-view="profile"]').click();
-        loadProfile(u.username);
-      };
       usersContainer.appendChild(el);
     });
-    
-    // Render Echoes
     const echoesContainer = document.getElementById('search-results-echoes');
     echoesContainer.innerHTML = data.echoes.length ? '<h3>Echoes</h3>' : '';
     renderFeed(data.echoes, echoesContainer);
-    
   } catch (err) {
     console.error(err);
-  }
-}
-
-async function editUsername() {
-  const newUsername = prompt("Enter your new username:", currentUser);
-  if (!newUsername || newUsername === currentUser) return;
-  
-  try {
-    const res = await fetch('/api/users/update-username', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ oldUsername: currentUser, newUsername })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    
-    // Update local state
-    localStorage.setItem('echogram_user', newUsername);
-    location.reload(); // Refresh to update all references
-  } catch (err) {
-    alert("Error: " + err.message);
   }
 }
 
@@ -536,7 +517,6 @@ async function checkNotifications() {
     const unread = notifs.filter(n => !n.isRead).length;
     const desktopBadge = document.getElementById('notif-badge-desktop');
     const mobileBadge = document.getElementById('notif-badge-mobile');
-    
     if (unread > 0) {
       desktopBadge.textContent = unread;
       desktopBadge.classList.remove('hidden');
@@ -556,29 +536,24 @@ async function loadNotifications() {
     const notifs = await fetchAPI(`/api/notifications/${currentUser}`);
     const container = document.getElementById('notifications-container');
     container.innerHTML = '';
-    
     if (notifs.length === 0) {
       container.innerHTML = '<p style="padding: 20px; color: #666;">No notifications yet.</p>';
       return;
     }
-    
     notifs.forEach(n => {
       const el = document.createElement('div');
       el.className = `notification-item ${n.isRead ? '' : 'unread'}`;
-      
       let icon = '';
       let text = '';
       if (n.type === 'like') { icon = '<i class="fa-solid fa-heart"></i>'; text = `<b>${n.fromUser}</b> liked your echo.`; }
       if (n.type === 'follow') { icon = '<i class="fa-solid fa-user-plus"></i>'; text = `<b>${n.fromUser}</b> followed you.`; }
       if (n.type === 'comment') { icon = '<i class="fa-solid fa-comment"></i>'; text = `<b>${n.fromUser}</b> commented on your echo.`; }
       if (n.type === 'message') { icon = '<i class="fa-solid fa-envelope"></i>'; text = `<b>${n.fromUser}</b> sent you a message.`; }
-      
       el.innerHTML = `
         ${icon}
         <div class="notification-content">${text}</div>
         <div class="echo-time">${new Date(n.createdAt).toLocaleDateString()}</div>
       `;
-      
       el.onclick = () => {
         if (n.type === 'message') {
           document.querySelector('[data-view="messages"]').click();
@@ -588,10 +563,8 @@ async function loadNotifications() {
           loadProfile(n.fromUser);
         }
       };
-      
       container.appendChild(el);
     });
-    
   } catch (err) {
     console.error(err);
   }
@@ -603,14 +576,15 @@ document.getElementById('mark-read-btn').addEventListener('click', async () => {
       method: 'POST',
       body: JSON.stringify({ username: currentUser })
     });
-    loadNotifications();
-    checkNotifications();
+    document.getElementById('notifications-container').innerHTML = '<p style="padding: 20px; color: #666;">No new notifications</p>';
+    document.getElementById('notif-badge-desktop').classList.add('hidden');
+    document.getElementById('notif-badge-mobile').classList.add('hidden');
   } catch (err) {
     console.error(err);
   }
 });
 
-// --- Messages ---
+// --- Messages & Conversations ---
 let chatInterval;
 
 async function loadConversations() {
@@ -618,27 +592,26 @@ async function loadConversations() {
     const chatUsers = await fetchAPI(`/api/conversations/${currentUser}`);
     const list = document.getElementById('conversations-list');
     list.innerHTML = '';
-    
     if (chatUsers.length === 0) {
       list.innerHTML = '<p style="padding:20px; color:#666;">No active conversations.</p>';
       return;
     }
-
     chatUsers.forEach(u => {
       const el = document.createElement('div');
       el.className = 'user-item';
       const isOnline = onlineUserList.includes(u.username);
-      
       el.innerHTML = `
-        <div class="user-item-info">
+        <div class="user-item-info user-link" data-username="${u.username}" style="cursor:pointer;">
           <div style="position:relative;">
              <img src="${u.avatar || defaultAvatar}">
              <span class="status-dot ${isOnline ? 'online' : ''}" style="position:absolute; bottom:0; right:0; border: 1px solid white;"></span>
           </div>
-          <span>${u.username}</span>
+          <span style="font-weight:bold;">${u.username}</span>
         </div>
       `;
-      el.onclick = () => openChat(u.username);
+      el.onclick = (e) => {
+        if (!e.target.closest('.user-link')) openChat(u.username);
+      };
       list.appendChild(el);
     });
   } catch (err) {
@@ -650,11 +623,9 @@ function openChat(username) {
   currentChatUser = username;
   document.getElementById('chat-area').classList.remove('hidden');
   document.getElementById('chat-with-username').textContent = username;
-  
   const isOnline = onlineUserList.includes(username);
   const dot = document.getElementById('chat-online-status');
   if (dot) dot.className = `status-dot ${isOnline ? 'online' : ''}`;
-  
   if (chatInterval) clearInterval(chatInterval);
   loadChatMessages();
   chatInterval = setInterval(loadChatMessages, 3000);
@@ -666,32 +637,19 @@ async function loadChatMessages() {
     const msgs = await fetchAPI(`/api/messages/${currentUser}/${currentChatUser}`);
     const container = document.getElementById('chat-messages');
     container.innerHTML = '';
-    
     msgs.forEach(m => {
       const isSent = m.sender === currentUser;
       const el = document.createElement('div');
       el.className = `message-bubble ${isSent ? 'message-sent' : 'message-received'}`;
-      
-      let seenHtml = '';
-      if (isSent) {
-        seenHtml = `<div class="message-seen">${m.isSeen ? '✓✓' : '✓'}</div>`;
-      }
-      
-      el.innerHTML = `
-        <div>${escapeHTML(m.text)}</div>
-        ${seenHtml}
-      `;
+      let seenHtml = isSent ? `<div class="message-seen">${m.isSeen ? '✓✓' : '✓'}</div>` : '';
+      el.innerHTML = `<div>${escapeHTML(m.text)}</div>${seenHtml}`;
       container.appendChild(el);
     });
-    
     container.scrollTop = container.scrollHeight;
-    
-    // Mark as seen
     await fetchAPI('/api/messages/seen', {
       method: 'POST',
       body: JSON.stringify({ sender: currentChatUser, receiver: currentUser })
     });
-    
   } catch (err) {
     console.error(err);
   }
@@ -706,7 +664,6 @@ async function sendMessage() {
   const input = document.getElementById('message-input');
   const text = input.value.trim();
   if (!text || !currentChatUser) return;
-  
   try {
     await fetchAPI('/api/messages', {
       method: 'POST',
@@ -719,19 +676,17 @@ async function sendMessage() {
   }
 }
 
-// --- Profile & Settings ---
+// --- Profile ---
 async function loadCurrentUserProfile() {
   try {
     const user = await fetchAPI(`/api/users/${currentUser}`);
     myFollowing = user.following || [];
     myBlocked = user.blocked || [];
-    
     if (user.avatar) {
       currentUserAvatar = user.avatar;
       localStorage.setItem('echogram_avatar', user.avatar);
       document.getElementById('current-user-avatar-desktop').src = user.avatar;
       document.getElementById('compose-avatar').src = user.avatar;
-      document.getElementById('settings-avatar-upload').dataset.current = user.avatar;
     }
     document.getElementById('settings-bio').value = user.bio || '';
     document.getElementById('settings-show-online').checked = user.settings.showOnline;
@@ -744,44 +699,42 @@ async function loadCurrentUserProfile() {
 async function loadProfile(username) {
   currentProfileUser = username;
   document.querySelectorAll('[data-view="profile"]').forEach(l => l.classList.add('active'));
-  document.querySelector('[data-ptab="echoes"]').click(); // Reset to Echoes tab
-  
+  document.querySelector('[data-ptab="echoes"]').click();
   try {
     const user = await fetchAPI(`/api/users/${username}?currentUser=${currentUser}`);
-    
     document.getElementById('profile-title').textContent = username;
     document.getElementById('profile-username').innerHTML = `
       ${username} 
-      ${user.isAdmin ? '<span class="verified-badge-inline">✓</span>' : ''}
-      ${username === currentUser ? '<i class="fa-solid fa-pen-to-square edit-icon" onclick="editUsername()" style="font-size: 1rem; cursor: pointer; margin-left: 10px;"></i>' : ''}
+      <i id="profile-verified" class="fa-solid fa-check admin-badge ${user.isAdmin ? '' : 'hidden'}"></i>
     `;
     document.getElementById('profile-avatar').src = user.avatar || defaultAvatar;
     document.getElementById('profile-bio').textContent = user.bio || '';
-    
-    // Set online status in profile header
     const isOnline = onlineUserList.includes(username);
     const profileDot = document.getElementById('profile-online-status');
-    if (profileDot) {
-      profileDot.className = `status-dot ${isOnline ? 'online' : ''}`;
-    }
+    if (profileDot) profileDot.className = `status-dot ${isOnline ? 'online' : ''}`;
     document.getElementById('profile-following-count').textContent = user.following.length;
     document.getElementById('profile-followers-count').textContent = user.followers.length;
     
-    // Actions
     const editBtn = document.getElementById('edit-profile-btn');
     const followBtn = document.getElementById('follow-btn');
-    const blockBtn = document.getElementById('block-btn');
+    const messageBtn = document.getElementById('message-btn');
+    const menuBtn = document.getElementById('profile-menu-btn');
     
     if (username === currentUser) {
       editBtn.classList.remove('hidden');
       followBtn.classList.add('hidden');
-      blockBtn.classList.add('hidden');
-      editBtn.onclick = () => document.querySelector('[data-view="settings"]').click();
+      messageBtn.classList.add('hidden');
+      menuBtn.classList.add('hidden');
+      editBtn.onclick = () => openModal('settings-modal');
     } else {
       editBtn.classList.add('hidden');
       followBtn.classList.remove('hidden');
-      blockBtn.classList.remove('hidden');
-      
+      messageBtn.classList.remove('hidden');
+      menuBtn.classList.remove('hidden');
+      messageBtn.onclick = () => {
+        document.querySelectorAll('[data-view="messages"]').forEach(l => l.click());
+        openChat(username);
+      };
       const isFollowing = myFollowing.includes(username);
       followBtn.textContent = isFollowing ? 'Unfollow' : 'Follow';
       followBtn.className = isFollowing ? 'outline-btn' : 'primary-btn';
@@ -789,27 +742,11 @@ async function loadProfile(username) {
         await toggleFollow(username, isFollowing);
         loadProfile(username);
       };
-      
-      const isBlocked = myBlocked.includes(username);
-      blockBtn.textContent = isBlocked ? 'Unblock' : 'Block';
-      blockBtn.onclick = async () => {
-        if (!confirm(`Are you sure you want to ${isBlocked ? 'unblock' : 'block'} ${username}?`)) return;
-        await toggleBlock(username, isBlocked);
-        if(!isBlocked) {
-          // If we just blocked them, kick back to home
-          document.querySelector('[data-view="home"]').click();
-        } else {
-          loadProfile(username);
-        }
-      };
     }
-    
-    // Load Tab Data
     const res = await fetch(`/api/search?q=${username}&currentUser=${currentUser}`);
     const data = await res.json();
     const userEchoes = data.echoes.filter(e => e.author === username);
     renderFeed(userEchoes, document.getElementById('profile-feed-container'));
-    
     renderUserList(user.followers, document.getElementById('profile-followers-list'), username === currentUser ? 'follower' : null);
     renderUserList(user.following, document.getElementById('profile-following-list'), null);
     loadCollections(username);
@@ -827,13 +764,11 @@ async function renderUserList(usernames, container, mode) {
     container.innerHTML = '<p style="padding:20px; color:#666;">Nothing to see here.</p>';
     return;
   }
-  
   for (let uname of usernames) {
     try {
       const u = await fetchAPI(`/api/users/${uname}?currentUser=${currentUser}`);
       const el = document.createElement('div');
       el.className = 'user-item';
-      
       let actionsHtml = '';
       if (mode === 'follower') {
         actionsHtml = `
@@ -843,19 +778,15 @@ async function renderUserList(usernames, container, mode) {
           </div>
         `;
       }
-      
       el.innerHTML = `
-        <div class="user-item-info">
+        <div class="user-item-info user-link" data-username="${u.username}" style="cursor:pointer;">
           <img src="${u.avatar || defaultAvatar}">
-          <span>${u.username}</span>
+          <span style="font-weight:bold;">${u.username}</span>
         </div>
         ${actionsHtml}
       `;
-      el.onclick = () => loadProfile(u.username);
       container.appendChild(el);
-    } catch(err) {
-      // User might be blocked, skip rendering them
-    }
+    } catch(err) {}
   }
 }
 
@@ -865,15 +796,10 @@ async function toggleFollow(username, isFollowing) {
       method: 'POST',
       body: JSON.stringify({ follower: currentUser, following: username, action: isFollowing ? 'unfollow' : 'follow' })
     });
-    if (isFollowing) {
-      myFollowing = myFollowing.filter(u => u !== username);
-    } else {
-      myFollowing.push(username);
-    }
+    if (isFollowing) myFollowing = myFollowing.filter(u => u !== username);
+    else myFollowing.push(username);
     if (!document.getElementById('view-home').classList.contains('hidden')) loadFeed();
-  } catch (err) {
-    console.error(err);
-  }
+  } catch (err) { console.error(err); }
 }
 
 async function removeFollower(followerUsername) {
@@ -896,82 +822,62 @@ async function toggleBlock(username, isBlocked) {
       body: JSON.stringify({ currentUser, [isBlocked ? 'userToUnblock' : 'userToBlock']: username })
     });
     await loadCurrentUserProfile();
-  } catch (err) {
-    console.error(err);
-  }
+  } catch (err) { console.error(err); }
 }
 
-// Settings Update
+// --- Settings Modal Actions ---
 document.getElementById('save-settings-btn').addEventListener('click', async () => {
   const bio = document.getElementById('settings-bio').value;
   const showOnline = document.getElementById('settings-show-online').checked;
   const showSeen = document.getElementById('settings-show-seen').checked;
-  
-  const fileInput = document.getElementById('settings-avatar-upload');
-  
   try {
-    // 1. Update Profile (Bio and Settings)
     await fetchAPI('/api/update-profile', {
       method: 'POST',
-      body: JSON.stringify({ 
-        username: currentUser, 
-        bio, 
-        settings: { showOnline, showSeen } 
-      })
+      body: JSON.stringify({ username: currentUser, bio, settings: { showOnline, showSeen } })
     });
-
-    // 2. Upload Avatar if a file is selected
-    if (fileInput.files[0]) {
-      const formData = new FormData();
-      formData.append('username', currentUser);
-      formData.append('avatar', fileInput.files[0]);
-
-      const res = await fetch('/api/upload-avatar', {
-        method: 'POST',
-        body: formData
-      });
-      if (!res.ok) throw new Error('Avatar upload failed');
-    }
-
     alert('Settings saved!');
+    closeModal();
     loadCurrentUserProfile();
-  } catch (err) {
-    console.error(err);
-    alert('Error saving settings: ' + err.message);
-  }
+  } catch (err) { alert('Error: ' + err.message); }
 });
 
+// --- Interaction Logic ---
+async function showInteractionUsers(echoId, type) {
+  const modalContent = document.getElementById('interaction-modal-content');
+  modalContent.innerHTML = 'Loading...';
+  document.getElementById('interaction-modal-title').textContent = type === 'likes' ? 'Liked by' : 'Re-echoed by';
+  openModal('interaction-modal');
+  try {
+    const echoes = await fetchAPI(`/api/echoes?currentUser=${currentUser}`);
+    const echo = echoes.find(e => e._id === echoId);
+    if (!echo) return;
+    const users = type === 'likes' ? echo.likedBy : (echo.reposters || []);
+    if (users.length === 0) {
+      modalContent.innerHTML = '<p style="padding:10px;">No users yet.</p>';
+      return;
+    }
+    renderUserList(users, modalContent, null);
+  } catch (err) { console.error(err); }
+}
+
+// --- Collections ---
 async function openSaveToCollection(echoId) {
   try {
     const collections = await fetchAPI(`/api/collections/${currentUser}`);
     let collOptions = collections.map((c, i) => `${i+1}. ${c.name}`).join('\n');
     let promptMsg = "Save to collection:\n" + (collOptions || "No collections yet.") + "\n\nType the name to save, or type a new name to create one:";
-    
     let choice = prompt(promptMsg);
     if (!choice) return;
-
     const existing = collections.find(c => c.name.toLowerCase() === choice.toLowerCase());
-    
     if (existing) {
-      await fetchAPI(`/api/collections/${existing._id}/save`, {
-        method: 'PUT',
-        body: JSON.stringify({ echoId })
-      });
+      await fetchAPI(`/api/collections/${existing._id}/save`, { method: 'PUT', body: JSON.stringify({ echoId }) });
       alert('Saved to ' + existing.name);
     } else {
-      const newColl = await fetchAPI('/api/collections', {
-        method: 'POST',
-        body: JSON.stringify({ name: choice, owner: currentUser })
-      });
-      await fetchAPI(`/api/collections/${newColl._id}/save`, {
-        method: 'PUT',
-        body: JSON.stringify({ echoId })
-      });
+      const newColl = await fetchAPI('/api/collections', { method: 'POST', body: JSON.stringify({ name: choice, owner: currentUser }) });
+      await fetchAPI(`/api/collections/${newColl._id}/save`, { method: 'PUT', body: JSON.stringify({ echoId }) });
       alert('Created and saved to ' + newColl.name);
     }
-  } catch (err) {
-    console.error(err);
-  }
+  } catch (err) { console.error(err); }
 }
 
 async function loadCollections(username) {
@@ -983,23 +889,14 @@ async function loadCollections(username) {
       container.innerHTML = '<p style="padding:20px; color:#666;">No collections yet.</p>';
       return;
     }
-
     collections.forEach(c => {
       const el = document.createElement('div');
       el.className = 'collection-item';
-      el.innerHTML = `
-        <div class="collection-square">
-          <i class="fa-solid fa-folder"></i>
-          <span class="collection-count">${c.echoes.length}</span>
-        </div>
-        <div class="collection-name">${c.name}</div>
-      `;
+      el.innerHTML = `<div class="collection-square"><i class="fa-solid fa-folder"></i><span class="collection-count">${c.echoes.length}</span></div><div class="collection-name">${c.name}</div>`;
       el.onclick = () => loadCollectionDetail(c._id);
       container.appendChild(el);
     });
-  } catch (err) {
-    console.error(err);
-  }
+  } catch (err) { console.error(err); }
 }
 
 async function loadCollectionDetail(id) {
@@ -1014,21 +911,64 @@ async function loadCollectionDetail(id) {
       <div id="collection-echoes-container"></div>
     `;
     renderFeed(coll.echoes, document.getElementById('collection-echoes-container'));
-  } catch (err) {
-    console.error(err);
-  }
+  } catch (err) { console.error(err); }
 }
+
+// --- Global Event Delegation ---
+document.body.addEventListener('click', async (e) => {
+  const userLink = e.target.closest('.user-link');
+  if (userLink) {
+    const username = userLink.dataset.username;
+    if (username) {
+      closeModal();
+      const profileTab = document.querySelector('.nav-links li[data-view="profile"]');
+      if (profileTab) profileTab.click();
+      loadProfile(username);
+      return;
+    }
+  }
+  if (e.target.matches('.comment-btn') || e.target.closest('.comment-btn')) {
+    const btn = e.target.closest('.comment-btn');
+    toggleComments(btn.dataset.echoId);
+    return;
+  }
+  if (e.target.matches('.post-comment-btn')) {
+    e.preventDefault();
+    postComment(e.target.dataset.echoId);
+    return;
+  }
+  if (e.target.matches('.reply-btn') || e.target.closest('.reply-btn')) {
+    const btn = e.target.closest('.reply-btn');
+    toggleReplyInput(btn.dataset.commentId);
+    return;
+  }
+  if (e.target.matches('.post-reply-btn')) {
+    e.preventDefault();
+    postReply(e.target.dataset.echoId, e.target.dataset.commentId);
+    return;
+  }
+  const interactionCount = e.target.closest('.interaction-count');
+  if (interactionCount) {
+    showInteractionUsers(interactionCount.dataset.echoId, interactionCount.dataset.type);
+    return;
+  }
+  if (e.target.closest('#profile-menu-btn')) {
+    document.getElementById('profile-dropdown').classList.toggle('hidden');
+    return;
+  } else {
+    document.getElementById('profile-dropdown')?.classList.add('hidden');
+  }
+  if (e.target.id === 'menu-block-btn') {
+    if (confirm(`Block ${currentProfileUser}?`)) {
+      await toggleBlock(currentProfileUser, false);
+      document.querySelector('[data-view="home"]').click();
+    }
+    return;
+  }
+});
 
 // Helpers
 function escapeHTML(str) {
   if (!str) return '';
-  return str.replace(/[&<>'"]/g, 
-    tag => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      "'": '&#39;',
-      '"': '&quot;'
-    }[tag])
-  );
+  return str.replace(/[&<>'"]/g, tag => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[tag]));
 }

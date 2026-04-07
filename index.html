@@ -16,6 +16,7 @@
       </div>
       <ul class="nav-links">
         <li class="active" data-view="home" title="Home"><i class="fa-solid fa-house"></i></li>
+        <li data-view="explore" title="Explore"><i class="fa-solid fa-compass"></i></li>
         <li data-view="search" title="Search"><i class="fa-solid fa-magnifying-glass"></i></li>
         <li data-view="notifications" title="Notifications">
           <i class="fa-regular fa-bell"></i>
@@ -23,8 +24,7 @@
         </li>
         <li data-view="messages" title="Messages"><i class="fa-regular fa-envelope"></i></li>
         <li data-view="profile" title="Profile"><i class="fa-regular fa-user"></i></li>
-        <li data-view="settings" title="Settings"><i class="fa-solid fa-gear"></i></li>
-        <li id="dark-mode-toggle" title="Toggle Dark Mode"><i class="fa-solid fa-moon"></i></li>
+        <li id="open-settings-btn" title="Settings"><i class="fa-solid fa-gear"></i></li>
       </ul>
       <div class="user-info">
         <img id="current-user-avatar-desktop" src="default-avatar.png" alt="Avatar">
@@ -61,6 +61,14 @@
           </div>
         </div>
         <div id="feed-container"></div>
+      </section>
+
+      <!-- Explore View -->
+      <section id="view-explore" class="view hidden">
+        <header class="view-header">
+          <h2>Explore</h2>
+        </header>
+        <div id="explore-container"></div>
       </section>
 
       <!-- Search View -->
@@ -115,7 +123,7 @@
       <section id="view-profile" class="view hidden">
         <header class="view-header">
           <h2 id="profile-title">Profile</h2>
-          <i id="profile-settings-icon" class="fa-solid fa-gear mobile-only" style="cursor: pointer;" onclick="document.querySelector('[data-view=\'settings\']').click()"></i>
+          <i id="profile-settings-icon" class="fa-solid fa-gear mobile-only" style="cursor: pointer;" onclick="document.getElementById('open-settings-btn').click()"></i>
         </header>
         <div class="profile-header">
           <div class="profile-info">
@@ -124,14 +132,18 @@
               <span id="profile-online-status" class="status-dot" style="position:absolute; bottom:10px; right:10px; width:15px; height:15px; border: 2px solid white;"></span>
             </div>
             <div class="profile-details">
-              <h3 id="profile-username">Username <i id="profile-verified" class="fa-solid fa-check verified-badge hidden"></i></h3>
+              <h3 id="profile-username">Username <i id="profile-verified" class="fa-solid fa-check admin-badge hidden"></i></h3>
               <p id="profile-bio"></p>
             </div>
           </div>
           <div class="profile-actions">
             <button id="edit-profile-btn" class="outline-btn hidden">Edit Profile</button>
             <button id="follow-btn" class="primary-btn hidden">Follow</button>
-            <button id="block-btn" class="outline-btn hidden" style="border-color: #000; color: #000;">Block</button>
+            <button id="message-btn" class="outline-btn hidden">Message</button>
+            <button id="profile-menu-btn" class="outline-btn" style="padding: 8px 12px;"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+            <ul id="profile-dropdown" class="profile-menu hidden">
+              <li id="menu-block-btn">Block User</li>
+            </ul>
           </div>
         </div>
         
@@ -158,36 +170,9 @@
         </div>
       </section>
 
-      <!-- Settings View -->
+      <!-- Settings View (Hidden by default, used as a modal source) -->
       <section id="view-settings" class="view hidden">
-        <header class="view-header">
-          <h2>Settings</h2>
-        </header>
-        <div class="settings-form">
-          <h3>Edit Profile</h3>
-          <div class="form-group">
-            <label>Avatar</label>
-            <input type="file" id="settings-avatar-upload" accept="image/*">
-          </div>
-          <div class="form-group">
-            <label>Bio</label>
-            <textarea id="settings-bio"></textarea>
-          </div>
-          <h3>Privacy</h3>
-          <div class="form-group checkbox">
-            <input type="checkbox" id="settings-show-online">
-            <label for="settings-show-online">Show Online Status</label>
-          </div>
-          <div class="form-group checkbox">
-            <input type="checkbox" id="settings-show-seen">
-            <label for="settings-show-seen">Send Read Receipts</label>
-          </div>
-          <button id="save-settings-btn" class="primary-btn">Save Changes</button>
-          
-          <div style="margin-top: 40px; text-align: center;">
-             <button class="logout-btn outline-btn" style="width: 100%;">Logout</button>
-          </div>
-        </div>
+        <!-- Kept for JS compatibility but functionality moved to modal -->
       </section>
     </main>
 
@@ -195,6 +180,7 @@
     <nav id="bottom-nav" class="mobile-only">
       <ul class="nav-links bottom-nav-links">
         <li class="active" data-view="home" title="Home"><i class="fa-solid fa-house"></i></li>
+        <li data-view="explore" title="Explore"><i class="fa-solid fa-compass"></i></li>
         <li data-view="search" title="Search"><i class="fa-solid fa-magnifying-glass"></i></li>
         <li data-view="notifications" title="Notifications" style="position:relative;">
           <i class="fa-regular fa-bell"></i>
@@ -202,10 +188,48 @@
         </li>
         <li data-view="messages" title="Messages"><i class="fa-regular fa-envelope"></i></li>
         <li data-view="profile" title="Profile"><i class="fa-regular fa-user"></i></li>
-        <li id="dark-mode-toggle-mobile" title="Toggle Dark Mode"><i class="fa-solid fa-moon"></i></li>
+        <li id="open-settings-btn-mobile" title="Settings"><i class="fa-solid fa-gear"></i></li>
       </ul>
     </nav>
   </div>
+
+  <!-- Overhaul Modals -->
+  <div id="modal-overlay" class="modal-overlay hidden"></div>
+
+  <div id="settings-modal" class="settings-modal hidden">
+    <h3>Settings</h3>
+    <hr style="margin: 10px 0; border: 0; border-top: 1px solid var(--border-color);">
+    <div class="form-group">
+      <label>Bio</label>
+      <textarea id="settings-bio"></textarea>
+    </div>
+    <div class="form-group checkbox">
+      <input type="checkbox" id="settings-show-online">
+      <label for="settings-show-online">Show Online Status</label>
+    </div>
+    <div class="form-group checkbox">
+      <input type="checkbox" id="settings-show-seen">
+      <label for="settings-show-seen">Send Read Receipts</label>
+    </div>
+    <div class="form-group" style="display:flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+      <span>Dark Mode</span>
+      <i id="theme-toggle-modal" class="fa-solid fa-moon" style="cursor:pointer; font-size: 1.2rem;"></i>
+    </div>
+    <div style="margin-top: 20px; display: flex; gap: 10px;">
+      <button id="close-settings-btn" class="outline-btn" style="flex:1;">Cancel</button>
+      <button id="save-settings-btn" class="primary-btn" style="flex:1;">Save</button>
+    </div>
+    <button class="logout-btn outline-btn" style="width: 100%; margin-top: 10px; border-color: #ff4444; color: #ff4444;">Logout</button>
+  </div>
+
+  <div id="interaction-modal" class="interaction-modal hidden">
+    <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+      <h3 id="interaction-modal-title">Users</h3>
+      <i id="close-interaction-btn" class="fa-solid fa-xmark" style="cursor:pointer;"></i>
+    </div>
+    <div id="interaction-modal-content" style="max-height: 300px; overflow-y: auto;"></div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="script.js"></script>
 </body>

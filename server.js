@@ -103,6 +103,8 @@ const echoSchema = new mongoose.Schema({
   author: { type: String, required: true },
   likedBy: [{ type: String }],
   comments: [commentSchema],
+  isRepost: { type: Boolean, default: false },
+  originalEcho: { type: mongoose.Schema.Types.ObjectId, ref: 'Echo' },
   createdAt: { type: Date, default: Date.now }
 });
 const Echo = mongoose.model('Echo', echoSchema);
@@ -220,9 +222,9 @@ app.get('/api/echoes', async (req, res) => {
         query.author = { $in: feedUsers };
       }
     }
-    let echoes = await Echo.find(query).sort({ createdAt: -1 });
+    let echoes = await Echo.find(query).sort({ createdAt: -1 }).populate('originalEcho');
     if (echoes.length === 0 && username === currentUser) {
-       echoes = await Echo.find({ author: { $nin: excluded } }).sort({ createdAt: -1 });
+       echoes = await Echo.find({ author: { $nin: excluded } }).sort({ createdAt: -1 }).populate('originalEcho');
     }
     res.json(echoes);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -386,7 +388,7 @@ app.get('/api/notifications/:username', async (req, res) => {
 app.get('/api/search', async (req, res) => {
   try {
     const { q, currentUser } = req.query;
-    if (!q) return res.json({ users: [], echoes: [] });
+    if (!q || q.trim() === '') return res.json({ users: [], echoes: [] });
 
     const regex = new RegExp(q, 'i');
     
@@ -407,6 +409,52 @@ app.get('/api/search', async (req, res) => {
     }).sort({ createdAt: -1 }).limit(20);
 
     res.json({ users, echoes });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/explore', async (req, res) => {
+  try {
+    const echoes = await Echo.aggregate([
+      { $addFields: { likesCount: { $size: { $ifNull: ["$likedBy", []] } } } },
+      { $sort: { likesCount: -1, createdAt: -1 } },
+      { $limit: 20 }
+    ]);
+    const populated = await Echo.populate(echoes, { path: 'originalEcho' });
+    res.json(populated);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/echoes/:id/repost', async (req, res) => {
+  try {
+    const original = await Echo.findById(req.params.id);
+    if (!original) return res.status(404).json({ error: 'Original echo not found' });
+    const { username } = req.body;
+    const repost = new Echo({
+      text: '',
+      author: username,
+      isRepost: true,
+      originalEcho: original._id
+    });
+    await repost.save();
+    res.json(repost);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/echoes/:id', async (req, res) => {
+  try {
+    const { username } = req.body;
+    const user = await User.findOne({ username });
+    const echo = await Echo.findById(req.params.id);
+    
+    if (!echo) return res.status(404).json({ error: 'Echo not found' });
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (user.isAdmin || echo.author === username) {
+      await Echo.findByIdAndDelete(req.params.id);
+      return res.json({ success: true });
+    }
+    
+    res.status(403).json({ error: 'Forbidden' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
