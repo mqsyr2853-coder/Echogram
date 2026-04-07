@@ -5,24 +5,15 @@ const path = require('path');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(__dirname));
 
-const path = require('path');
-
-// تعريف المجلد الحالي كـ Static عشان يقرأ الـ CSS والـ JS
+// Serve static files from the root directory
 app.use(express.static(path.join(__dirname, '.')));
 
-// أهم سطر: أي صفحة مش بتبدأ بـ /api، ابعت لها ملف الـ index.html
-app.get(/^(?!\/api).+/, (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
+// Database Connection using environment variable
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://mqsyr2853_db_user:I0JYehJtg1o8yScy@mmttaleen0.asw5isr.mongodb.net/EchogramDB?retryWrites=true&w=majority';
 
-
-const MONGO_URI = 'mongodb+srv://mqsyr2853_db_user:I0JYehJtg1o8yScy@mmttaleen0.asw5isr.mongodb.net/EchogramDB?retryWrites=true&w=majority';
-
-// الحل الصحيح والمتوافق مع النسخ الجديدة
-mongoose.connect('mongodb+srv://mqsyr2853_db_user:I0JYehJtg1o8yScy@mmttaleen0.asw5isr.mongodb.net/EchogramDB?retryWrites=true&w=majority')
-  .then(() => console.log('MongoDB connected ✅ (Cloud)'))
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('MongoDB connected ✅'))
   .catch(err => console.error('MongoDB connection error ❌:', err));
 
 // --- SCHEMAS ---
@@ -85,7 +76,6 @@ const Notification = mongoose.model('Notification', notificationSchema);
 
 // --- API ROUTES ---
 
-// Auth
 app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
@@ -113,7 +103,6 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Users
 app.get('/api/users/:username', async (req, res) => {
   try {
     const { currentUser } = req.query;
@@ -136,7 +125,6 @@ app.post('/api/upload-avatar', async (req, res) => {
   try {
     const { username, avatar } = req.body;
     await User.updateOne({ username }, { avatar });
-    // Update comments avatar
     await Echo.updateMany(
       { "comments.author": username },
       { $set: { "comments.$[elem].authorAvatar": avatar } },
@@ -158,7 +146,6 @@ app.post('/api/update-profile', async (req, res) => {
   }
 });
 
-// Follow & Block
 app.post('/api/follow', async (req, res) => {
   try {
     const { follower, following, action } = req.body;
@@ -215,7 +202,6 @@ app.post('/api/users/unblock', async (req, res) => {
   }
 });
 
-// Search
 app.get('/api/search', async (req, res) => {
   try {
     const q = req.query.q || '';
@@ -225,23 +211,19 @@ app.get('/api/search', async (req, res) => {
       const me = await User.findOne({ username: currentUser });
       if (me) excluded = [...me.blocked, ...me.blockedBy];
     }
-    
     const users = await User.find({ 
       username: { $regex: q, $options: 'i', $nin: excluded }
     }, '-password');
-    
     const echoes = await Echo.find({ 
       text: { $regex: q, $options: 'i' },
       author: { $nin: excluded }
     }).sort({ createdAt: -1 });
-    
     res.json({ users, echoes });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Echoes
 app.get('/api/echoes', async (req, res) => {
   try {
     const { username, currentUser } = req.query; 
@@ -250,29 +232,21 @@ app.get('/api/echoes', async (req, res) => {
       const me = await User.findOne({ username: currentUser });
       if (me) excluded = [...me.blocked, ...me.blockedBy];
     }
-
     let query = { author: { $nin: excluded } };
-
     if (username && username !== currentUser) {
-      // Viewing a specific user's echoes
       query.author = username;
-      if (excluded.includes(username)) return res.json([]); // block check
+      if (excluded.includes(username)) return res.json([]);
     } else if (username === currentUser) {
-      // Home feed: prioritize following
       const me = await User.findOne({ username: currentUser });
       if (me && me.following.length > 0) {
         const feedUsers = [...me.following, currentUser].filter(u => !excluded.includes(u));
         query.author = { $in: feedUsers };
       }
     }
-
     let echoes = await Echo.find(query).sort({ createdAt: -1 });
-    
-    // Fallback if feed empty and it's home feed
     if (echoes.length === 0 && username === currentUser) {
        echoes = await Echo.find({ author: { $nin: excluded } }).sort({ createdAt: -1 });
     }
-    
     res.json(echoes);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -295,7 +269,6 @@ app.post('/api/echoes/:id/like', async (req, res) => {
     const { username } = req.body;
     const echo = await Echo.findById(req.params.id);
     if (!echo) return res.status(404).json({ error: 'Echo not found' });
-    
     if (echo.likedBy.includes(username)) {
       echo.likedBy = echo.likedBy.filter(u => u !== username);
     } else {
@@ -316,10 +289,8 @@ app.post('/api/echoes/:id/comment', async (req, res) => {
     const { author, authorAvatar, text } = req.body;
     const echo = await Echo.findById(req.params.id);
     if (!echo) return res.status(404).json({ error: 'Echo not found' });
-    
     echo.comments.push({ author, authorAvatar, text, likes: [], dislikes: [] });
     await echo.save();
-    
     if (echo.author !== author) {
       await new Notification({ type: 'comment', fromUser: author, toUser: echo.author, echoId: echo._id }).save();
     }
@@ -331,19 +302,15 @@ app.post('/api/echoes/:id/comment', async (req, res) => {
 
 app.put('/api/comments/:echoId/:commentId/react', async (req, res) => {
   try {
-    const { username, type } = req.body; // 'like' or 'dislike'
+    const { username, type } = req.body;
     const echo = await Echo.findById(req.params.echoId);
     if (!echo) return res.status(404).json({ error: 'Echo not found' });
-    
     const comment = echo.comments.id(req.params.commentId);
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
-    
     comment.likes = comment.likes.filter(u => u !== username);
     comment.dislikes = comment.dislikes.filter(u => u !== username);
-    
     if (type === 'like') comment.likes.push(username);
     else if (type === 'dislike') comment.dislikes.push(username);
-    
     await echo.save();
     res.json(echo);
   } catch (err) {
@@ -351,13 +318,11 @@ app.put('/api/comments/:echoId/:commentId/react', async (req, res) => {
   }
 });
 
-// Admin Delete
 app.delete('/api/admin/delete/:id', async (req, res) => {
   try {
     const { username } = req.body;
     const user = await User.findOne({ username });
     if (!user || !user.isAdmin) return res.status(403).json({ error: 'Not authorized' });
-    
     await Echo.findByIdAndDelete(req.params.id);
     res.json({ success: true });
   } catch (err) {
@@ -365,7 +330,6 @@ app.delete('/api/admin/delete/:id', async (req, res) => {
   }
 });
 
-// Messages
 app.get('/api/messages/:user1/:user2', async (req, res) => {
   try {
     const { user1, user2 } = req.params;
@@ -373,7 +337,6 @@ app.get('/api/messages/:user1/:user2', async (req, res) => {
     if (u1 && (u1.blocked.includes(user2) || u1.blockedBy.includes(user2))) {
       return res.json([]);
     }
-
     const messages = await Message.find({
       $or: [
         { sender: user1, receiver: user2 },
@@ -408,7 +371,6 @@ app.post('/api/messages/seen', async (req, res) => {
   }
 });
 
-// Notifications
 app.get('/api/notifications/:username', async (req, res) => {
   try {
     const user = await User.findOne({ username: req.params.username });
@@ -433,7 +395,6 @@ app.post('/api/notifications/read', async (req, res) => {
   }
 });
 
-// Users List for Chat
 app.get('/api/users', async (req, res) => {
   try {
     const { currentUser } = req.query;
@@ -449,13 +410,16 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-// Fallback for SPA
+// Fix Routes: Ensure all non-API requests serve 'index.html'
 app.get(/^(?!\/api).+/, (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-// وكمان اتأكد إنك عامل export للـ app في آخر الملف (اختياري بس بيساعد فيرسل):
+// Export app for Vercel
 module.exports = app;
+
+// Local development fallback
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
