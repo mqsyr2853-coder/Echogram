@@ -7,6 +7,17 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(__dirname));
 
+const path = require('path');
+
+// تعريف المجلد الحالي كـ Static عشان يقرأ الـ CSS والـ JS
+app.use(express.static(path.join(__dirname, '.')));
+
+// أهم سطر: أي صفحة مش بتبدأ بـ /api، ابعت لها ملف الـ index.html
+app.get(/^(?!\/api).+/, (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+
 const MONGO_URI = 'mongodb+srv://mqsyr2853_db_user:I0JYehJtg1o8yScy@mmttaleen0.asw5isr.mongodb.net/EchogramDB?retryWrites=true&w=majority';
 
 // الحل الصحيح والمتوافق مع النسخ الجديدة
