@@ -17,6 +17,15 @@ body {
   background-color: var(--bg-color);
   color: var(--text-color);
   line-height: 1.5;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+body.dark-mode {
+  --bg-color: #000000;
+  --text-color: #ffffff;
+  --border-color: #333333;
+  --light-grey: #1a1a1a;
+  --hover-grey: #111111;
 }
 
 .hidden {
@@ -822,6 +831,52 @@ body {
   width: 16px;
   height: 16px;
   accent-color: var(--text-color);
+}
+
+/* Collections Grid */
+.collections-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 10px;
+}
+
+.collection-item {
+  border: 1px solid var(--border-color);
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.collection-item:hover {
+  background-color: var(--hover-grey);
+}
+
+.collection-square {
+  flex-grow: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 2.5rem;
+  position: relative;
+}
+
+.collection-count {
+  position: absolute;
+  top: 5px;
+  right: 10px;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+.collection-name {
+  padding: 8px;
+  text-align: center;
+  border-top: 1px solid var(--border-color);
+  font-weight: bold;
+  font-size: 0.9rem;
 }
 
 .delete-btn {

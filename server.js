@@ -126,6 +126,13 @@ const notificationSchema = new mongoose.Schema({
 });
 const Notification = mongoose.model('Notification', notificationSchema);
 
+const collectionSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  owner: { type: String, required: true },
+  echoes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Echo' }]
+});
+const Collection = mongoose.model('Collection', collectionSchema);
+
 // --- API ROUTES (المسارات الكاملة) ---
 
 app.post('/api/register', async (req, res) => {
@@ -440,6 +447,42 @@ app.put('/api/users/update-username', async (req, res) => {
     await User.updateMany({ blockedBy: oldUsername }, { $set: { "blockedBy.$": newUsername } });
 
     res.json({ success: true, newUsername });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/collections', async (req, res) => {
+  try {
+    const { name, owner } = req.body;
+    const collection = new Collection({ name, owner });
+    await collection.save();
+    res.json(collection);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/collections/:username', async (req, res) => {
+  try {
+    const collections = await Collection.find({ owner: req.params.username });
+    res.json(collections);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/collections/id/:id', async (req, res) => {
+  try {
+    const coll = await Collection.findById(req.params.id).populate('echoes');
+    res.json(coll);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/collections/:id/save', async (req, res) => {
+  try {
+    const collection = await Collection.findById(req.params.id);
+    if (!collection) return res.status(404).json({ error: 'Collection not found' });
+    const { echoId } = req.body;
+    if (!collection.echoes.includes(echoId)) {
+      collection.echoes.push(echoId);
+      await collection.save();
+    }
+    res.json(collection);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -125,6 +125,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('chat-area').classList.add('hidden');
   });
 
+  // Dark Mode Toggle
+  const applyDarkMode = (isDark) => {
+    if (isDark) {
+      document.body.classList.add('dark-mode');
+      document.querySelectorAll('#dark-mode-toggle i, #dark-mode-toggle-mobile i').forEach(i => {
+        i.classList.remove('fa-moon');
+        i.classList.add('fa-sun');
+      });
+    } else {
+      document.body.classList.remove('dark-mode');
+      document.querySelectorAll('#dark-mode-toggle i, #dark-mode-toggle-mobile i').forEach(i => {
+        i.classList.remove('fa-sun');
+        i.classList.add('fa-moon');
+      });
+    }
+  };
+
+  const savedDarkMode = localStorage.getItem('echogram_dark_mode') === 'true';
+  applyDarkMode(savedDarkMode);
+
+  const toggleDarkMode = () => {
+    const isDark = document.body.classList.toggle('dark-mode');
+    localStorage.setItem('echogram_dark_mode', isDark);
+    applyDarkMode(isDark);
+  };
+
+  document.getElementById('dark-mode-toggle').addEventListener('click', toggleDarkMode);
+  document.getElementById('dark-mode-toggle-mobile').addEventListener('click', toggleDarkMode);
+
   await loadCurrentUserProfile();
   loadFeed();
   startNotificationPolling();
@@ -136,7 +165,18 @@ function switchView(viewId) {
   
   if (viewId === 'home') loadFeed();
   if (viewId === 'search') document.getElementById('search-input').focus();
-  if (viewId === 'notifications') loadNotifications();
+  if (viewId === 'notifications') {
+    loadNotifications();
+    // Mark notifications as read when opening the view
+    fetchAPI('/api/notifications/read', {
+      method: 'POST',
+      body: JSON.stringify({ username: currentUser })
+    }).then(() => {
+      document.getElementById('notif-badge-desktop').classList.add('hidden');
+      document.getElementById('notif-badge-mobile').classList.add('hidden');
+      document.querySelectorAll('.notification-item.unread').forEach(el => el.classList.remove('unread'));
+    }).catch(console.error);
+  }
   if (viewId === 'messages') {
     document.getElementById('chat-area').classList.add('hidden'); // Reset to list on mobile
     loadConversations();
@@ -196,6 +236,9 @@ function renderFeed(echoes, container) {
           </button>
           <button class="echo-action" onclick="toggleComments('${echo._id}')">
             <i class="fa-regular fa-comment"></i> ${echo.comments.length}
+          </button>
+          <button class="echo-action" onclick="openSaveToCollection('${echo._id}')">
+            <i class="fa-regular fa-bookmark"></i>
           </button>
           ${isAdmin ? `<button class="echo-action delete-btn" onclick="deleteEcho('${echo._id}')"><i class="fa-solid fa-trash"></i></button>` : ''}
         </div>
@@ -769,7 +812,7 @@ async function loadProfile(username) {
     
     renderUserList(user.followers, document.getElementById('profile-followers-list'), username === currentUser ? 'follower' : null);
     renderUserList(user.following, document.getElementById('profile-following-list'), null);
-    
+    loadCollections(username);
   } catch (err) {
     if (err.message.includes('blocked')) {
       alert('This user is unavailable.');
@@ -897,6 +940,84 @@ document.getElementById('save-settings-btn').addEventListener('click', async () 
     alert('Error saving settings: ' + err.message);
   }
 });
+
+async function openSaveToCollection(echoId) {
+  try {
+    const collections = await fetchAPI(`/api/collections/${currentUser}`);
+    let collOptions = collections.map((c, i) => `${i+1}. ${c.name}`).join('\n');
+    let promptMsg = "Save to collection:\n" + (collOptions || "No collections yet.") + "\n\nType the name to save, or type a new name to create one:";
+    
+    let choice = prompt(promptMsg);
+    if (!choice) return;
+
+    const existing = collections.find(c => c.name.toLowerCase() === choice.toLowerCase());
+    
+    if (existing) {
+      await fetchAPI(`/api/collections/${existing._id}/save`, {
+        method: 'PUT',
+        body: JSON.stringify({ echoId })
+      });
+      alert('Saved to ' + existing.name);
+    } else {
+      const newColl = await fetchAPI('/api/collections', {
+        method: 'POST',
+        body: JSON.stringify({ name: choice, owner: currentUser })
+      });
+      await fetchAPI(`/api/collections/${newColl._id}/save`, {
+        method: 'PUT',
+        body: JSON.stringify({ echoId })
+      });
+      alert('Created and saved to ' + newColl.name);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function loadCollections(username) {
+  const container = document.getElementById('profile-collections-grid');
+  container.innerHTML = '';
+  try {
+    const collections = await fetchAPI(`/api/collections/${username}`);
+    if (collections.length === 0) {
+      container.innerHTML = '<p style="padding:20px; color:#666;">No collections yet.</p>';
+      return;
+    }
+
+    collections.forEach(c => {
+      const el = document.createElement('div');
+      el.className = 'collection-item';
+      el.innerHTML = `
+        <div class="collection-square">
+          <i class="fa-solid fa-folder"></i>
+          <span class="collection-count">${c.echoes.length}</span>
+        </div>
+        <div class="collection-name">${c.name}</div>
+      `;
+      el.onclick = () => loadCollectionDetail(c._id);
+      container.appendChild(el);
+    });
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function loadCollectionDetail(id) {
+  try {
+    const coll = await fetchAPI(`/api/collections/id/${id}`);
+    const container = document.getElementById('profile-collections-grid');
+    container.innerHTML = `
+      <div style="width: 100%; padding: 10px; border-bottom: 1px solid var(--border-color); margin-bottom: 10px; display: flex; align-items: center; gap: 10px;">
+        <i class="fa-solid fa-arrow-left" style="cursor:pointer;" onclick="loadCollections('${currentProfileUser}')"></i>
+        <h3 style="margin:0;">${coll.name}</h3>
+      </div>
+      <div id="collection-echoes-container"></div>
+    `;
+    renderFeed(coll.echoes, document.getElementById('collection-echoes-container'));
+  } catch (err) {
+    console.error(err);
+  }
+}
 
 // Helpers
 function escapeHTML(str) {

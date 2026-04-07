@@ -15,15 +15,16 @@
         <h2>Echogram</h2>
       </div>
       <ul class="nav-links">
-        <li class="active" data-view="home"><i class="fa-solid fa-house"></i> <span>Home</span></li>
-        <li data-view="search"><i class="fa-solid fa-magnifying-glass"></i> <span>Search</span></li>
-        <li data-view="notifications">
-          <i class="fa-regular fa-bell"></i> <span>Notifications</span>
+        <li class="active" data-view="home" title="Home"><i class="fa-solid fa-house"></i></li>
+        <li data-view="search" title="Search"><i class="fa-solid fa-magnifying-glass"></i></li>
+        <li data-view="notifications" title="Notifications">
+          <i class="fa-regular fa-bell"></i>
           <span id="notif-badge-desktop" class="badge hidden">0</span>
         </li>
-        <li data-view="messages"><i class="fa-regular fa-envelope"></i> <span>Messages</span></li>
-        <li data-view="profile"><i class="fa-regular fa-user"></i> <span>Profile</span></li>
-        <li data-view="settings"><i class="fa-solid fa-gear"></i> <span>Settings</span></li>
+        <li data-view="messages" title="Messages"><i class="fa-regular fa-envelope"></i></li>
+        <li data-view="profile" title="Profile"><i class="fa-regular fa-user"></i></li>
+        <li data-view="settings" title="Settings"><i class="fa-solid fa-gear"></i></li>
+        <li id="dark-mode-toggle" title="Toggle Dark Mode"><i class="fa-solid fa-moon"></i></li>
       </ul>
       <div class="user-info">
         <img id="current-user-avatar-desktop" src="default-avatar.png" alt="Avatar">
@@ -139,6 +140,7 @@
           <button class="profile-tab active" data-ptab="echoes">Echoes</button>
           <button class="profile-tab" data-ptab="followers"><span id="profile-followers-count">0</span> Followers</button>
           <button class="profile-tab" data-ptab="following"><span id="profile-following-count">0</span> Following</button>
+          <button class="profile-tab" data-ptab="collections">Collections</button>
         </div>
         
         <!-- Tab Contents -->
@@ -150,6 +152,9 @@
         </div>
         <div id="ptab-following" class="ptab-content hidden">
           <div id="profile-following-list"></div>
+        </div>
+        <div id="ptab-collections" class="ptab-content hidden">
+          <div id="profile-collections-grid" class="collections-grid"></div>
         </div>
       </section>
 
@@ -189,14 +194,15 @@
     <!-- Mobile Bottom Navigation -->
     <nav id="bottom-nav" class="mobile-only">
       <ul class="nav-links bottom-nav-links">
-        <li class="active" data-view="home"><i class="fa-solid fa-house"></i></li>
-        <li data-view="search"><i class="fa-solid fa-magnifying-glass"></i></li>
-        <li data-view="notifications" style="position:relative;">
+        <li class="active" data-view="home" title="Home"><i class="fa-solid fa-house"></i></li>
+        <li data-view="search" title="Search"><i class="fa-solid fa-magnifying-glass"></i></li>
+        <li data-view="notifications" title="Notifications" style="position:relative;">
           <i class="fa-regular fa-bell"></i>
           <span id="notif-badge-mobile" class="badge hidden">0</span>
         </li>
-        <li data-view="messages"><i class="fa-regular fa-envelope"></i></li>
-        <li data-view="profile"><i class="fa-regular fa-user"></i></li>
+        <li data-view="messages" title="Messages"><i class="fa-regular fa-envelope"></i></li>
+        <li data-view="profile" title="Profile"><i class="fa-regular fa-user"></i></li>
+        <li id="dark-mode-toggle-mobile" title="Toggle Dark Mode"><i class="fa-solid fa-moon"></i></li>
       </ul>
     </nav>
   </div>
