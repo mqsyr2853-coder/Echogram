@@ -1,4 +1,73 @@
+const socket = typeof io !== 'undefined' ? io() : null;
 const currentUser = localStorage.getItem('echogram_user');
+
+// Socket.io initialization
+if (currentUser && socket) {
+  socket.emit('join', currentUser);
+}
+
+let onlineUserList = [];
+
+// Socket event listeners
+if (socket) {
+  socket.on('online_users', (users) => {
+    onlineUserList = users;
+    // Update current chat status if open
+    if (currentChatUser) {
+      const isOnline = onlineUserList.includes(currentChatUser);
+      const dot = document.getElementById('chat-online-status');
+      if (dot) dot.className = `status-dot ${isOnline ? 'online' : ''}`;
+    }
+    // Update profile status if open
+    if (currentProfileUser) {
+      const isOnline = onlineUserList.includes(currentProfileUser);
+      const dot = document.getElementById('profile-online-status');
+      if (dot) dot.className = `status-dot ${isOnline ? 'online' : ''}`;
+    }
+    // Update conversations list if in messages view
+    if (!document.getElementById('view-messages').classList.contains('hidden')) {
+      loadConversations();
+    }
+  });
+
+  socket.on('new_message', (msg) => {
+    if (msg.sender !== currentUser) {
+      showToast(`New message from ${msg.sender}`);
+      if (currentChatUser === msg.sender) loadChatMessages();
+    }
+  });
+
+  socket.on('new_notification', (notif) => {
+    showToast(getNotificationText(notif));
+    checkNotifications();
+  });
+}
+
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.style.position = 'fixed';
+  toast.style.bottom = '20px';
+  toast.style.left = '50%';
+  toast.style.transform = 'translateX(-50%)';
+  toast.style.backgroundColor = '#000';
+  toast.style.color = '#fff';
+  toast.style.padding = '10px 20px';
+  toast.style.borderRadius = '5px';
+  toast.style.zIndex = '9999';
+  toast.style.fontSize = '14px';
+  toast.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+function getNotificationText(n) {
+  if (n.type === 'like') return `${n.fromUser} liked your echo`;
+  if (n.type === 'follow') return `${n.fromUser} followed you`;
+  if (n.type === 'comment') return `${n.fromUser} commented on your echo`;
+  return 'New notification';
+}
+
 const isAdmin = localStorage.getItem('echogram_admin') === 'true';
 let currentUserAvatar = localStorage.getItem('echogram_avatar') || '';
 
@@ -114,7 +183,7 @@ function renderFeed(echoes, container) {
       <div class="echo-content">
         <div class="echo-header">
           <div>
-             <span class="echo-author" onclick="loadProfile('${echo.author}')">${echo.author}</span>
+             <span class="echo-author" onclick="loadProfile('${echo.author}')">${echo.author} <span class="verified-badge-inline hidden">✓</span></span>
              <span class="echo-time">${new Date(echo.createdAt).toLocaleString()}</span>
           </div>
           ${followBtnHtml}
@@ -142,9 +211,10 @@ function renderFeed(echoes, container) {
       </div>
     `;
     
-    // Fetch author avatar async
+    // Fetch author details async
     fetchAPI(`/api/users/${echo.author}?currentUser=${currentUser}`).then(u => {
       if (u.avatar) echoEl.querySelector('.echo-avatar').src = u.avatar;
+      if (u.isAdmin) echoEl.querySelector('.verified-badge-inline').classList.remove('hidden');
     }).catch(()=>{});
 
     container.appendChild(echoEl);
@@ -155,39 +225,60 @@ function renderCommentsHTML(comments, echoId) {
   return comments.map(c => {
     const isLiked = c.likes.includes(currentUser);
     const isDisliked = c.dislikes.includes(currentUser);
-    return `
-      <div class="comment">
-        <img class="comment-avatar" src="${c.authorAvatar || defaultAvatar}" alt="Avatar" onclick="loadProfile('${c.author}')">
+    
+    const repliesHtml = (c.replies || []).map(r => `
+      <div class="comment reply" style="margin-left: 40px; border-left: 1px solid var(--border-color); padding-left: 10px; margin-top: 10px;">
+        <img class="comment-avatar" src="${r.authorAvatar || defaultAvatar}" alt="Avatar" style="width: 24px; height: 24px;">
         <div class="comment-body">
           <div class="comment-header">
-            <span class="comment-author" onclick="loadProfile('${c.author}')">${c.author}</span>
-            <span class="comment-time">${new Date(c.createdAt).toLocaleDateString()}</span>
+            <span class="comment-author">${r.author} ${r.authorIsAdmin ? '<span class="verified-badge-inline">✓</span>' : ''}</span>
+            <span class="comment-time">${new Date(r.createdAt).toLocaleDateString()}</span>
           </div>
-          <div class="comment-text">${escapeHTML(c.text)}</div>
-          <div class="comment-actions">
-             <button class="comment-action ${isLiked ? 'active' : ''}" onclick="reactComment('${echoId}', '${c._id}', 'like')">
-                <i class="${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart"></i> ${c.likes.length}
-             </button>
-             <button class="comment-action ${isDisliked ? 'active' : ''}" onclick="reactComment('${echoId}', '${c._id}', 'dislike')">
-                <i class="${isDisliked ? 'fa-solid' : 'fa-regular'} fa-thumbs-down"></i> ${c.dislikes.length}
-             </button>
+          <div class="comment-text">${escapeHTML(r.text)}</div>
+        </div>
+      </div>
+    `).join('');
+
+    return `
+      <div class="comment-wrapper" style="margin-bottom: 20px;">
+        <div class="comment">
+          <img class="comment-avatar" src="${c.authorAvatar || defaultAvatar}" alt="Avatar" onclick="loadProfile('${c.author}')">
+          <div class="comment-body">
+            <div class="comment-header">
+              <span class="comment-author" onclick="loadProfile('${c.author}')">${c.author} ${c.authorIsAdmin ? '<span class="verified-badge-inline">✓</span>' : ''}</span>
+              <span class="comment-time">${new Date(c.createdAt).toLocaleDateString()}</span>
+            </div>
+            <div class="comment-text">${escapeHTML(c.text)}</div>
+            <div class="comment-actions">
+               <button class="comment-action ${isLiked ? 'active' : ''}" onclick="reactComment('${echoId}', '${c._id}', 'like')">
+                  <i class="${isLiked ? 'fa-solid' : 'fa-regular'} fa-heart"></i> ${c.likes.length}
+               </button>
+               <button class="comment-action ${isDisliked ? 'active' : ''}" onclick="reactComment('${echoId}', '${c._id}', 'dislike')">
+                  <i class="${isDisliked ? 'fa-solid' : 'fa-regular'} fa-thumbs-down"></i> ${c.dislikes.length}
+               </button>
+               <button class="comment-action" onclick="toggleReplyInput('${c._id}')">
+                  <i class="fa-solid fa-reply"></i> Reply
+               </button>
+            </div>
+            <div id="reply-input-${c._id}" class="comment-input-area hidden" style="margin-top: 5px;">
+              <input type="text" id="reply-text-${c._id}" placeholder="Write a reply..." style="font-size: 0.85rem; border: 1px solid var(--border-color); padding: 5px; outline: none; width: 100%;">
+              <button class="outline-btn" style="padding: 4px 8px; font-size: 0.8rem; margin-top: 5px;" onclick="postReply('${echoId}', '${c._id}')">Post Reply</button>
+            </div>
           </div>
         </div>
+        ${repliesHtml}
       </div>
     `;
   }).join('');
 }
 
 // --- Compose Echo ---
-let composeImageBase64 = '';
-
 document.getElementById('echo-image-upload').addEventListener('change', function(e) {
   const file = e.target.files[0];
   if (file) {
     const reader = new FileReader();
     reader.onload = function(evt) {
-      composeImageBase64 = evt.target.result;
-      document.getElementById('image-preview').src = composeImageBase64;
+      document.getElementById('image-preview').src = evt.target.result;
       document.getElementById('image-preview-container').classList.remove('hidden');
     };
     reader.readAsDataURL(file);
@@ -195,21 +286,30 @@ document.getElementById('echo-image-upload').addEventListener('change', function
 });
 
 document.getElementById('remove-image-btn').addEventListener('click', () => {
-  composeImageBase64 = '';
   document.getElementById('echo-image-upload').value = '';
   document.getElementById('image-preview-container').classList.add('hidden');
 });
 
 document.getElementById('post-echo-btn').addEventListener('click', async () => {
-  const text = document.getElementById('echo-text').value.trim();
-  if (!text && !composeImageBase64) return;
+  const textInput = document.getElementById('echo-text');
+  const fileInput = document.getElementById('echo-image-upload');
+  
+  if (!textInput.value.trim() && !fileInput.files[0]) return;
+  
+  const formData = new FormData();
+  formData.append('text', textInput.value.trim());
+  formData.append('author', currentUser);
+  if (fileInput.files[0]) {
+    formData.append('image', fileInput.files[0]);
+  }
   
   try {
-    await fetchAPI('/api/echoes', {
+    const res = await fetch('/api/echoes', {
       method: 'POST',
-      body: JSON.stringify({ text, image: composeImageBase64, author: currentUser })
+      body: formData
     });
-    document.getElementById('echo-text').value = '';
+    if (!res.ok) throw new Error('Upload failed');
+    textInput.value = '';
     document.getElementById('remove-image-btn').click();
     loadFeed();
   } catch (err) {
@@ -248,6 +348,30 @@ async function postComment(echoId) {
     // Immediately update UI
     document.getElementById(`comments-list-${echoId}`).innerHTML = renderCommentsHTML(updatedEcho.comments, echoId);
     input.value = '';
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function toggleReplyInput(commentId) {
+  const input = document.getElementById(`reply-input-${commentId}`);
+  input.classList.toggle('hidden');
+  if (!input.classList.contains('hidden')) {
+    document.getElementById(`reply-text-${commentId}`).focus();
+  }
+}
+
+async function postReply(echoId, commentId) {
+  const input = document.getElementById(`reply-text-${commentId}`);
+  const text = input.value.trim();
+  if (!text) return;
+  
+  try {
+    const updatedEcho = await fetchAPI(`/api/echoes/${echoId}/comments/${commentId}/reply`, {
+      method: 'POST',
+      body: JSON.stringify({ author: currentUser, authorAvatar: currentUserAvatar, text })
+    });
+    document.getElementById(`comments-list-${echoId}`).innerHTML = renderCommentsHTML(updatedEcho.comments, echoId);
   } catch (err) {
     console.error(err);
   }
@@ -312,7 +436,10 @@ async function performSearch(query) {
       el.innerHTML = `
         <div class="user-item-info">
           <img src="${u.avatar || defaultAvatar}">
-          <span>${u.username}</span>
+          <div class="user-item-details">
+            <span class="username">${u.username} ${u.isAdmin ? '<span class="verified-badge-inline">✓</span>' : ''}</span>
+            <span class="bio">${u.bio ? escapeHTML(u.bio).substring(0, 50) + '...' : ''}</span>
+          </div>
         </div>
         <div class="user-item-actions">${btnHtml}</div>
       `;
@@ -330,6 +457,27 @@ async function performSearch(query) {
     
   } catch (err) {
     console.error(err);
+  }
+}
+
+async function editUsername() {
+  const newUsername = prompt("Enter your new username:", currentUser);
+  if (!newUsername || newUsername === currentUser) return;
+  
+  try {
+    const res = await fetch('/api/users/update-username', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldUsername: currentUser, newUsername })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    
+    // Update local state
+    localStorage.setItem('echogram_user', newUsername);
+    location.reload(); // Refresh to update all references
+  } catch (err) {
+    alert("Error: " + err.message);
   }
 }
 
@@ -424,20 +572,25 @@ let chatInterval;
 
 async function loadConversations() {
   try {
-    appUsers = await fetchAPI(`/api/users?currentUser=${currentUser}`);
+    const chatUsers = await fetchAPI(`/api/conversations/${currentUser}`);
     const list = document.getElementById('conversations-list');
     list.innerHTML = '';
     
-    appUsers.filter(u => u.username !== currentUser).forEach(u => {
+    if (chatUsers.length === 0) {
+      list.innerHTML = '<p style="padding:20px; color:#666;">No active conversations.</p>';
+      return;
+    }
+
+    chatUsers.forEach(u => {
       const el = document.createElement('div');
       el.className = 'user-item';
-      const isOnline = u.settings.showOnline ? 'online' : ''; 
+      const isOnline = onlineUserList.includes(u.username);
       
       el.innerHTML = `
         <div class="user-item-info">
           <div style="position:relative;">
              <img src="${u.avatar || defaultAvatar}">
-             <span class="status-dot ${isOnline}" style="position:absolute; bottom:0; right:0; border: 1px solid white;"></span>
+             <span class="status-dot ${isOnline ? 'online' : ''}" style="position:absolute; bottom:0; right:0; border: 1px solid white;"></span>
           </div>
           <span>${u.username}</span>
         </div>
@@ -455,12 +608,9 @@ function openChat(username) {
   document.getElementById('chat-area').classList.remove('hidden');
   document.getElementById('chat-with-username').textContent = username;
   
-  const user = appUsers.find(u => u.username === username);
-  if (user && user.settings.showOnline) {
-    document.getElementById('chat-online-status').classList.add('online');
-  } else {
-    document.getElementById('chat-online-status').classList.remove('online');
-  }
+  const isOnline = onlineUserList.includes(username);
+  const dot = document.getElementById('chat-online-status');
+  if (dot) dot.className = `status-dot ${isOnline ? 'online' : ''}`;
   
   if (chatInterval) clearInterval(chatInterval);
   loadChatMessages();
@@ -557,9 +707,20 @@ async function loadProfile(username) {
     const user = await fetchAPI(`/api/users/${username}?currentUser=${currentUser}`);
     
     document.getElementById('profile-title').textContent = username;
-    document.getElementById('profile-username').innerHTML = `${username} ${user.isVerified || user.isAdmin ? '<i class="fa-solid fa-check verified-badge"></i>' : ''}`;
+    document.getElementById('profile-username').innerHTML = `
+      ${username} 
+      ${user.isAdmin ? '<span class="verified-badge-inline">✓</span>' : ''}
+      ${username === currentUser ? '<i class="fa-solid fa-pen-to-square edit-icon" onclick="editUsername()" style="font-size: 1rem; cursor: pointer; margin-left: 10px;"></i>' : ''}
+    `;
     document.getElementById('profile-avatar').src = user.avatar || defaultAvatar;
     document.getElementById('profile-bio').textContent = user.bio || '';
+    
+    // Set online status in profile header
+    const isOnline = onlineUserList.includes(username);
+    const profileDot = document.getElementById('profile-online-status');
+    if (profileDot) {
+      profileDot.className = `status-dot ${isOnline ? 'online' : ''}`;
+    }
     document.getElementById('profile-following-count').textContent = user.following.length;
     document.getElementById('profile-followers-count').textContent = user.followers.length;
     
@@ -704,38 +865,38 @@ document.getElementById('save-settings-btn').addEventListener('click', async () 
   const showSeen = document.getElementById('settings-show-seen').checked;
   
   const fileInput = document.getElementById('settings-avatar-upload');
-  let avatar = fileInput.dataset.current || '';
   
-  if (fileInput.files[0]) {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      avatar = e.target.result;
-      await saveSettings(bio, { showOnline, showSeen }, avatar);
-    };
-    reader.readAsDataURL(fileInput.files[0]);
-  } else {
-    await saveSettings(bio, { showOnline, showSeen }, avatar);
-  }
-});
-
-async function saveSettings(bio, settings, avatar) {
   try {
+    // 1. Update Profile (Bio and Settings)
     await fetchAPI('/api/update-profile', {
       method: 'POST',
-      body: JSON.stringify({ username: currentUser, bio, settings })
+      body: JSON.stringify({ 
+        username: currentUser, 
+        bio, 
+        settings: { showOnline, showSeen } 
+      })
     });
-    if (avatar) {
-      await fetchAPI('/api/upload-avatar', {
+
+    // 2. Upload Avatar if a file is selected
+    if (fileInput.files[0]) {
+      const formData = new FormData();
+      formData.append('username', currentUser);
+      formData.append('avatar', fileInput.files[0]);
+
+      const res = await fetch('/api/upload-avatar', {
         method: 'POST',
-        body: JSON.stringify({ username: currentUser, avatar })
+        body: formData
       });
+      if (!res.ok) throw new Error('Avatar upload failed');
     }
+
     alert('Settings saved!');
     loadCurrentUserProfile();
   } catch (err) {
-    alert('Error saving settings');
+    console.error(err);
+    alert('Error saving settings: ' + err.message);
   }
-}
+});
 
 // Helpers
 function escapeHTML(str) {

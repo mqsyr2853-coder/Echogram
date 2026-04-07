@@ -118,8 +118,9 @@
         </header>
         <div class="profile-header">
           <div class="profile-info">
-            <div class="profile-avatar-container">
+            <div class="profile-avatar-container" style="position:relative;">
               <img id="profile-avatar" src="default-avatar.png" alt="Avatar">
+              <span id="profile-online-status" class="status-dot" style="position:absolute; bottom:10px; right:10px; width:15px; height:15px; border: 2px solid white;"></span>
             </div>
             <div class="profile-details">
               <h3 id="profile-username">Username <i id="profile-verified" class="fa-solid fa-check verified-badge hidden"></i></h3>
@@ -199,6 +200,7 @@
       </ul>
     </nav>
   </div>
+  <script src="/socket.io/socket.io.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

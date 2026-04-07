@@ -426,6 +426,17 @@ body {
   margin-left: 2px;
 }
 
+.verified-badge-inline {
+  color: #000;
+  font-size: 0.85em;
+  margin-left: 4px;
+  font-weight: bold;
+}
+
+.verified-badge-inline.hidden {
+  display: none;
+}
+
 /* Comments Section */
 .comments-section {
   margin-top: 15px;
@@ -559,6 +570,24 @@ body {
   border-radius: 50%;
   object-fit: cover;
   border: 1px solid var(--border-color);
+}
+
+.user-item-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-item-details .username {
+  font-weight: bold;
+}
+
+.user-item-details .bio {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.edit-icon:hover {
+  color: #666;
 }
 
 .user-item-actions {

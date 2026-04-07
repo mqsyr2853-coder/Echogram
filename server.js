@@ -1,22 +1,66 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const http = require('http');
+const multer = require('multer');
+const fs = require('fs');
 
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+const server = http.createServer(app);
+const io = require('socket.io')(server);
 
-// Serve static files from the root directory
+// Ensure uploads directory exists
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
+// Serve uploads folder statically
+app.use('/uploads', express.static(uploadDir));
+
+// Multer Setup
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, 'uploads/'),
+  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+});
+const upload = multer({ storage });
+
+// Socket.io Connection Logic
+let onlineUsers = new Set();
+
+io.on('connection', (socket) => {
+  let socketUser = null;
+
+  socket.on('join', (username) => {
+    socketUser = username;
+    socket.join(username);
+    onlineUsers.add(username);
+    io.emit('online_users', Array.from(onlineUsers));
+  });
+
+  socket.on('disconnect', () => {
+    if (socketUser) {
+      onlineUsers.delete(socketUser);
+      io.emit('online_users', Array.from(onlineUsers));
+    }
+  });
+});
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// تشغيل الملفات الثابتة
 app.use(express.static(path.join(__dirname, '.')));
 
-// Database Connection using environment variable
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://mqsyr2853_db_user:I0JYehJtg1o8yScy@mmttaleen0.asw5isr.mongodb.net/EchogramDB?retryWrites=true&w=majority';
+// الربط بقاعدة البيانات
+const MONGODB_URI = process.env.MONGO_URI || 'mongodb+srv://mqsyr2853_db_user:I0JYehJtg1o8yScy@mmttaleen0.asw5isr.mongodb.net/EchogramDB?retryWrites=true&w=majority';
 
 mongoose.connect(MONGODB_URI)
-  .then(() => console.log('MongoDB connected ✅'))
+  .then(() => console.log('Echogram Full Power: MongoDB connected ✅'))
   .catch(err => console.error('MongoDB connection error ❌:', err));
 
-// --- SCHEMAS ---
+// --- SCHEMAS (المخططات الكاملة) ---
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true },
@@ -39,9 +83,17 @@ const User = mongoose.model('User', userSchema);
 const commentSchema = new mongoose.Schema({
   author: String,
   authorAvatar: String,
+  authorIsAdmin: { type: Boolean, default: false },
   text: String,
   likes: [{ type: String }],
   dislikes: [{ type: String }],
+  replies: [{
+    author: String,
+    authorAvatar: String,
+    authorIsAdmin: { type: Boolean, default: false },
+    text: String,
+    createdAt: { type: Date, default: Date.now }
+  }],
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -74,7 +126,7 @@ const notificationSchema = new mongoose.Schema({
 });
 const Notification = mongoose.model('Notification', notificationSchema);
 
-// --- API ROUTES ---
+// --- API ROUTES (المسارات الكاملة) ---
 
 app.post('/api/register', async (req, res) => {
   try {
@@ -85,9 +137,7 @@ app.post('/api/register', async (req, res) => {
     const user = new User({ username, email, password: hashedPassword });
     await user.save();
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/login', async (req, res) => {
@@ -98,9 +148,7 @@ app.post('/api/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
     res.json({ username: user.username, isAdmin: user.isAdmin, avatar: user.avatar });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/users/:username', async (req, res) => {
@@ -108,7 +156,6 @@ app.get('/api/users/:username', async (req, res) => {
     const { currentUser } = req.query;
     const user = await User.findOne({ username: req.params.username }, '-password');
     if (!user) return res.status(404).json({ error: 'User not found' });
-    
     if (currentUser) {
       const me = await User.findOne({ username: currentUser });
       if (me && (me.blocked.includes(user.username) || me.blockedBy.includes(user.username))) {
@@ -116,34 +163,7 @@ app.get('/api/users/:username', async (req, res) => {
       }
     }
     res.json(user);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/upload-avatar', async (req, res) => {
-  try {
-    const { username, avatar } = req.body;
-    await User.updateOne({ username }, { avatar });
-    await Echo.updateMany(
-      { "comments.author": username },
-      { $set: { "comments.$[elem].authorAvatar": avatar } },
-      { arrayFilters: [{ "elem.author": username }] }
-    );
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/update-profile', async (req, res) => {
-  try {
-    const { username, bio, settings } = req.body;
-    await User.updateOne({ username }, { bio, settings });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/follow', async (req, res) => {
@@ -158,70 +178,20 @@ app.post('/api/follow', async (req, res) => {
       await User.updateOne({ username: following }, { $pull: { followers: follower } });
     }
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/users/remove-follower', async (req, res) => {
+app.get('/api/users', async (req, res) => {
   try {
-    const { currentUser, followerToRemove } = req.body;
-    await User.updateOne({ username: currentUser }, { $pull: { followers: followerToRemove } });
-    await User.updateOne({ username: followerToRemove }, { $pull: { following: currentUser } });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/users/block', async (req, res) => {
-  try {
-    const { currentUser, userToBlock } = req.body;
-    await User.updateOne({ username: currentUser }, { 
-      $addToSet: { blocked: userToBlock },
-      $pull: { following: userToBlock, followers: userToBlock }
-    });
-    await User.updateOne({ username: userToBlock }, { 
-      $addToSet: { blockedBy: currentUser },
-      $pull: { following: currentUser, followers: currentUser }
-    });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/users/unblock', async (req, res) => {
-  try {
-    const { currentUser, userToUnblock } = req.body;
-    await User.updateOne({ username: currentUser }, { $pull: { blocked: userToUnblock } });
-    await User.updateOne({ username: userToUnblock }, { $pull: { blockedBy: currentUser } });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/search', async (req, res) => {
-  try {
-    const q = req.query.q || '';
-    const currentUser = req.query.currentUser;
+    const { currentUser } = req.query;
     let excluded = [];
     if (currentUser) {
       const me = await User.findOne({ username: currentUser });
       if (me) excluded = [...me.blocked, ...me.blockedBy];
     }
-    const users = await User.find({ 
-      username: { $regex: q, $options: 'i', $nin: excluded }
-    }, '-password');
-    const echoes = await Echo.find({ 
-      text: { $regex: q, $options: 'i' },
-      author: { $nin: excluded }
-    }).sort({ createdAt: -1 });
-    res.json({ users, echoes });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    const users = await User.find({ username: { $nin: excluded } }, 'username avatar settings isVerified isAdmin');
+    res.json(users);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/echoes', async (req, res) => {
@@ -248,20 +218,20 @@ app.get('/api/echoes', async (req, res) => {
        echoes = await Echo.find({ author: { $nin: excluded } }).sort({ createdAt: -1 });
     }
     res.json(echoes);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/echoes', async (req, res) => {
+app.post('/api/echoes', upload.single('image'), async (req, res) => {
   try {
-    const { text, image, author } = req.body;
+    const { text, author } = req.body;
+    let image = '';
+    if (req.file) {
+      image = '/uploads/' + req.file.filename;
+    }
     const echo = new Echo({ text, image, author });
     await echo.save();
     res.json(echo);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/echoes/:id/like', async (req, res) => {
@@ -274,69 +244,92 @@ app.post('/api/echoes/:id/like', async (req, res) => {
     } else {
       echo.likedBy.push(username);
       if (echo.author !== username) {
-        await new Notification({ type: 'like', fromUser: username, toUser: echo.author, echoId: echo._id }).save();
+        const notif = new Notification({ type: 'like', fromUser: username, toUser: echo.author, echoId: echo._id });
+        await notif.save();
+        io.to(echo.author).emit('new_notification', notif);
       }
     }
     await echo.save();
     res.json(echo);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/echoes/:id/comment', async (req, res) => {
   try {
     const { author, authorAvatar, text } = req.body;
+    const user = await User.findOne({ username: author });
+    const isAdmin = user ? user.isAdmin : false;
+    
     const echo = await Echo.findById(req.params.id);
     if (!echo) return res.status(404).json({ error: 'Echo not found' });
-    echo.comments.push({ author, authorAvatar, text, likes: [], dislikes: [] });
+    
+    echo.comments.push({ author, authorAvatar, authorIsAdmin: isAdmin, text });
     await echo.save();
+    
     if (echo.author !== author) {
       await new Notification({ type: 'comment', fromUser: author, toUser: echo.author, echoId: echo._id }).save();
     }
+    
     res.json(echo);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/comments/:echoId/:commentId/react', async (req, res) => {
   try {
-    const { username, type } = req.body;
-    const echo = await Echo.findById(req.params.echoId);
+    const { echoId, commentId } = req.params;
+    const { username, type } = req.body; // type: 'like' or 'dislike'
+    
+    const echo = await Echo.findById(echoId);
     if (!echo) return res.status(404).json({ error: 'Echo not found' });
-    const comment = echo.comments.id(req.params.commentId);
+    
+    const comment = echo.comments.id(commentId);
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
-    comment.likes = comment.likes.filter(u => u !== username);
-    comment.dislikes = comment.dislikes.filter(u => u !== username);
-    if (type === 'like') comment.likes.push(username);
-    else if (type === 'dislike') comment.dislikes.push(username);
+    
+    if (type === 'like') {
+      if (comment.likes.includes(username)) {
+        comment.likes = comment.likes.filter(u => u !== username);
+      } else {
+        comment.likes.push(username);
+        comment.dislikes = comment.dislikes.filter(u => u !== username);
+      }
+    } else if (type === 'dislike') {
+      if (comment.dislikes.includes(username)) {
+        comment.dislikes = comment.dislikes.filter(u => u !== username);
+      } else {
+        comment.dislikes.push(username);
+        comment.likes = comment.likes.filter(u => u !== username);
+      }
+    }
+    
     await echo.save();
     res.json(echo);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/admin/delete/:id', async (req, res) => {
+app.post('/api/echoes/:echoId/comments/:commentId/reply', async (req, res) => {
   try {
-    const { username } = req.body;
-    const user = await User.findOne({ username });
-    if (!user || !user.isAdmin) return res.status(403).json({ error: 'Not authorized' });
-    await Echo.findByIdAndDelete(req.params.id);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    const { echoId, commentId } = req.params;
+    const { author, authorAvatar, text } = req.body;
+    
+    const user = await User.findOne({ username: author });
+    const isAdmin = user ? user.isAdmin : false;
+
+    const echo = await Echo.findById(echoId);
+    if (!echo) return res.status(404).json({ error: 'Echo not found' });
+    
+    const comment = echo.comments.id(commentId);
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    
+    comment.replies.push({ author, authorAvatar, authorIsAdmin: isAdmin, text });
+    await echo.save();
+    
+    res.json(echo);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/messages/:user1/:user2', async (req, res) => {
   try {
     const { user1, user2 } = req.params;
-    const u1 = await User.findOne({ username: user1 });
-    if (u1 && (u1.blocked.includes(user2) || u1.blockedBy.includes(user2))) {
-      return res.json([]);
-    }
     const messages = await Message.find({
       $or: [
         { sender: user1, receiver: user2 },
@@ -344,9 +337,7 @@ app.get('/api/messages/:user1/:user2', async (req, res) => {
       ]
     }).sort({ createdAt: 1 });
     res.json(messages);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/messages', async (req, res) => {
@@ -354,72 +345,129 @@ app.post('/api/messages', async (req, res) => {
     const { sender, receiver, text } = req.body;
     const msg = new Message({ sender, receiver, text });
     await msg.save();
-    await new Notification({ type: 'message', fromUser: sender, toUser: receiver }).save();
+    io.to(receiver).emit('new_message', msg);
+    io.to(sender).emit('new_message', msg);
     res.json(msg);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/messages/seen', async (req, res) => {
+app.get('/api/conversations/:username', async (req, res) => {
   try {
-    const { sender, receiver } = req.body;
-    await Message.updateMany({ sender, receiver, isSeen: false }, { isSeen: true });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    const { username } = req.params;
+    const messages = await Message.find({
+      $or: [{ sender: username }, { receiver: username }]
+    }).sort({ createdAt: -1 });
+
+    const chatPartners = new Set();
+    messages.forEach(m => {
+      if (m.sender === username) chatPartners.add(m.receiver);
+      else chatPartners.add(m.sender);
+    });
+
+    const users = await User.find({ username: { $in: Array.from(chatPartners) } }, 'username avatar settings isVerified isAdmin');
+    res.json(users);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/notifications/:username', async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.params.username });
-    let excluded = user ? [...user.blocked, ...user.blockedBy] : [];
-    const notifs = await Notification.find({ 
-      toUser: req.params.username,
-      fromUser: { $nin: excluded }
-    }).sort({ createdAt: -1 }).limit(20);
+    const notifs = await Notification.find({ toUser: req.params.username }).sort({ createdAt: -1 }).limit(20);
     res.json(notifs);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/notifications/read', async (req, res) => {
+app.get('/api/search', async (req, res) => {
   try {
-    const { username } = req.body;
-    await Notification.updateMany({ toUser: username, isRead: false }, { isRead: true });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    const { q, currentUser } = req.query;
+    if (!q) return res.json({ users: [], echoes: [] });
 
-app.get('/api/users', async (req, res) => {
-  try {
-    const { currentUser } = req.query;
+    const regex = new RegExp(q, 'i');
+    
     let excluded = [];
     if (currentUser) {
       const me = await User.findOne({ username: currentUser });
       if (me) excluded = [...me.blocked, ...me.blockedBy];
     }
-    const users = await User.find({ username: { $nin: excluded } }, 'username avatar settings isVerified isAdmin');
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+
+    const users = await User.find({ 
+      username: regex,
+      username: { $nin: excluded }
+    }, 'username avatar bio isVerified isAdmin').limit(10);
+
+    const echoes = await Echo.find({ 
+      text: regex,
+      author: { $nin: excluded }
+    }).sort({ createdAt: -1 }).limit(20);
+
+    res.json({ users, echoes });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Fix Routes: Ensure all non-API requests serve 'index.html'
-app.get(/^(?!\/api).+/, (req, res) => {
+app.put('/api/users/update-username', async (req, res) => {
+  try {
+    const { oldUsername, newUsername } = req.body;
+    if (!oldUsername || !newUsername) return res.status(400).json({ error: 'Missing usernames' });
+
+    const existing = await User.findOne({ username: newUsername });
+    if (existing) return res.status(400).json({ error: 'Username already taken' });
+
+    // 1. Update User itself
+    await User.updateOne({ username: oldUsername }, { username: newUsername });
+
+    // 2. Update Echoes author and likedBy
+    await Echo.updateMany({ author: oldUsername }, { author: newUsername });
+    await Echo.updateMany({ likedBy: oldUsername }, { $set: { "likedBy.$": newUsername } });
+
+    // 3. Update Comments inside Echoes
+    await Echo.updateMany(
+      { "comments.author": oldUsername },
+      { $set: { "comments.$[elem].author": newUsername } },
+      { arrayFilters: [{ "elem.author": oldUsername }] }
+    );
+
+    // 4. Update Messages
+    await Message.updateMany({ sender: oldUsername }, { sender: newUsername });
+    await Message.updateMany({ receiver: oldUsername }, { receiver: newUsername });
+
+    // 5. Update Notifications
+    await Notification.updateMany({ fromUser: oldUsername }, { fromUser: newUsername });
+    await Notification.updateMany({ toUser: oldUsername }, { toUser: newUsername });
+
+    // 6. Update other users' followers/following/blocked lists
+    await User.updateMany({ followers: oldUsername }, { $set: { "followers.$": newUsername } });
+    await User.updateMany({ following: oldUsername }, { $set: { "following.$": newUsername } });
+    await User.updateMany({ blocked: oldUsername }, { $set: { "blocked.$": newUsername } });
+    await User.updateMany({ blockedBy: oldUsername }, { $set: { "blockedBy.$": newUsername } });
+
+    res.json({ success: true, newUsername });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/update-profile', async (req, res) => {
+  try {
+    const { username, bio, settings } = req.body;
+    await User.updateOne({ username }, { bio, settings });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/upload-avatar', upload.single('avatar'), async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const avatarPath = '/uploads/' + req.file.filename;
+    await User.updateOne({ username }, { avatar: avatarPath });
+    res.json({ avatar: avatarPath });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Routing Fallback
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/api')) {
+      return res.status(404).json({ error: 'API route not found' });
+    }
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Export app for Vercel
-module.exports = app;
-
-// Local development fallback
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-}
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
